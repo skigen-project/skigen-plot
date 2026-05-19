@@ -1,0 +1,55 @@
+{
+  "$comment": "Single source of truth for all SkigenPlot public API classes. Used by doxygen2mdx.py to generate MDX pages. Every public class MUST be listed here.",
+  "modules": {
+    "Plot": {
+      "include": "skigen/plot/plotview.h",
+      "dir_slug": "plot",
+      "sidebar_label": "Skigen::Plot",
+      "test": "tests/test_plotview_data.cpp",
+      "benchmark": null
+    },
+    "PlotCore": {
+      "include": "skigen/plot/core.h",
+      "dir_slug": "plot-core",
+      "sidebar_label": "Skigen::Plot (Core)",
+      "test": "tests/test_core.cpp",
+      "benchmark": null
+    }
+  },
+  "classes": [
+    {
+      "name": "PlotView",
+      "module": "Plot",
+      "documented": true,
+      "guide": "/docs/plot/guide/plotview",
+      "example": "examples/line/line_plot.cpp",
+      "example_snippet": "example_line_plot",
+      "sidebar_position": 1
+    },
+    {
+      "name": "BoundingBox2D",
+      "module": "PlotCore",
+      "documented": true,
+      "guide": "/docs/plot/guide/core-math",
+      "example": null,
+      "sidebar_position": 1
+    },
+    {
+      "name": "BoundingBox3D",
+      "module": "PlotCore",
+      "documented": true,
+      "guide": "/docs/plot/guide/core-math",
+      "example": null,
+      "sidebar_position": 2
+    },
+    {
+      "name": "Camera3D",
+      "module": "PlotCore",
+      "documented": true,
+      "guide": "/docs/plot/guide/camera3d",
+      "example": "examples/pointcloud/point_cloud.cpp",
+      "example_snippet": "example_point_cloud",
+      "sidebar_position": 3
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+---
+sidebar_position: 2
+title: Getting Started
+---
+
+# Getting Started
+
+## Prerequisites
+
+- C++23 compiler (GCC ≥ 13, Clang ≥ 17, MSVC ≥ 2022 17.8)
+- [Eigen 3](https://eigen.tuxfamily.org/) ≥ 3.4
+- [Qt 6](https://www.qt.io/) ≥ 6.7 (Core, Gui, Widgets, ShaderTools)
+- CMake ≥ 3.20
+
+## CMake Integration
+
+### As a subdirectory
+
+```cmake
+add_subdirectory(skigen-plot)
+target_link_libraries(my_app PRIVATE SkigenPlot::SkigenPlot)
+```
+
+### As an installed package
+
+```cmake
+find_package(SkigenPlot REQUIRED)
+target_link_libraries(my_app PRIVATE SkigenPlot::SkigenPlot)
+```
+
+### Building from source
+
+```bash
+git clone https://github.com/skigen-project/skigen-plot.git
+cd skigen-plot
+cmake -B build -DSKIGENPLOT_BUILD_EXAMPLES=ON -DSKIGENPLOT_BUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build
+```
+
+Eigen is discovered automatically from the system or from a sibling `../eigen` directory (same fallback strategy as Skigen).
+
+## First Plot
+
+```cpp
+#include <skigen/plot/plotview.h>
+#include <Eigen/Core>
+#include <QApplication>
+
+int main(int argc, char* argv[]) {
+    QApplication app(argc, argv);
+
+    Eigen::VectorXf x(5), y(5);
+    x << 0, 1, 2, 3, 4;
+    y << 0, 1, 4, 9, 16;
+
+    Skigen::Plot::PlotView view;
+    view.plot(x, y);
+    view.resize(600, 400);
+    view.show();
+
+    return app.exec();
+}
+```
+
+## Include Structure
+
+```cpp
+#include <skigen/plot/core.h>      // Math: BoundingBox, Camera3D, projections
+#include <skigen/plot/plotview.h>   // Widget: PlotView (2D/3D rendering)
+```
+
+## Namespace
+
+All public API lives in `Skigen::Plot`:
+
+```cpp
+Skigen::Plot::PlotView      // Main widget
+Skigen::Plot::Camera3D       // 3D camera
+Skigen::Plot::BoundingBox2D  // 2D bounds
+Skigen::Plot::BoundingBox3D  // 3D bounds
+```

@@ -1,0 +1,67 @@
+---
+sidebar_position: 4
+title: Scatter Plot
+---
+
+# Scatter Plot
+
+Render a 2D scatter plot of discrete data points. Uses the same rendering pipeline as line plots with point topology.
+
+## API
+
+```cpp
+template <typename DerivedX, typename DerivedY>
+void PlotView::scatter(const Eigen::MatrixBase<DerivedX>& x,
+                       const Eigen::MatrixBase<DerivedY>& y);
+```
+
+## Methods
+
+| Method | Description |
+|--------|-------------|
+| `scatter(x, y)` | Set scatter data from two equal-length vectors |
+| `setLineColor(rgba)` | Set point colour as `Eigen::Vector4f` |
+| `setBackgroundColor(rgba)` | Set viewport background colour |
+
+## Example
+
+```cpp
+#include <skigen/plot/plotview.h>
+#include <Eigen/Core>
+#include <QApplication>
+#include <random>
+
+int main(int argc, char* argv[]) {
+    QApplication app(argc, argv);
+
+    std::mt19937 rng(42);
+    std::normal_distribution<float> dist(0.f, 1.f);
+
+    int n = 200;
+    Eigen::VectorXf x(n), y(n);
+    for (int i = 0; i < n; ++i) {
+        x(i) = dist(rng);
+        y(i) = dist(rng);
+    }
+
+    Skigen::Plot::PlotView view;
+    view.scatter(x, y);
+    view.setLineColor({1.0f, 0.4f, 0.3f, 1.0f});
+    view.resize(600, 600);
+    view.show();
+
+    return app.exec();
+}
+```
+
+## Use with Skigen ML
+
+Scatter plots are ideal for visualizing ML results — cluster assignments, PCA projections, decision boundaries:
+
+```cpp
+// After PCA with Skigen
+Skigen::PCA<double> pca(2);
+Eigen::MatrixXd Z = pca.fit_transform(X);
+
+view.scatter(Z.col(0).cast<float>(), Z.col(1).cast<float>());
+```

@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The Skigen Contributors
+#
+# Doxyfile — Doxygen configuration for SkigenPlot API reference
+# Generates XML consumed by doxygen2mdx.py to produce Docusaurus MDX.
+
+PROJECT_NAME           = "SkigenPlot"
+PROJECT_NUMBER         = "1.0.0"
+PROJECT_BRIEF          = "Hardware-accelerated C++ plotting for scientific and ML visualization"
+
+# ---------------------------------------------------------------------------
+# Input
+# ---------------------------------------------------------------------------
+INPUT                  = ../include/skigen/plot/
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h
+EXCLUDE_PATTERNS       = */internal/* */detail/*
+
+EXAMPLE_PATH           = ../examples/
+EXAMPLE_RECURSIVE      = YES
+
+# ---------------------------------------------------------------------------
+# Extraction settings
+# ---------------------------------------------------------------------------
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_CLASSES  = NO
+HIDE_UNDOC_MEMBERS     = YES
+HIDE_UNDOC_CLASSES     = YES
+
+# ---------------------------------------------------------------------------
+# Output — XML only (doxygen2mdx.py reads XML; no HTML)
+# ---------------------------------------------------------------------------
+OUTPUT_DIRECTORY       = doxygen_output
+GENERATE_XML           = YES
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_MAN           = NO
+GENERATE_RTF           = NO
+
+# ---------------------------------------------------------------------------
+# Group / module support
+# ---------------------------------------------------------------------------
+DISTRIBUTE_GROUP_DOC   = YES
+
+# ---------------------------------------------------------------------------
+# C++ / template handling
+# ---------------------------------------------------------------------------
+BUILTIN_STL_SUPPORT    = YES
+STRIP_FROM_PATH        = ../include/skigen/plot/
+
+PREDEFINED             = "SKIGENPLOT_EXPORT=" \
+                         "EIGEN_MAKE_ALIGNED_OPERATOR_NEW=" \
+                         "EIGEN_VECTORIZE=" \
+                         "Q_OBJECT="
+
+# ---------------------------------------------------------------------------
+# Source browsing (off — we only need the extracted API data)
+# ---------------------------------------------------------------------------
+SOURCE_BROWSER         = NO
+VERBATIM_HEADERS       = NO
+
+# ---------------------------------------------------------------------------
+# Warnings — strict: catch undocumented public members early
+# ---------------------------------------------------------------------------
+WARN_IF_UNDOCUMENTED   = YES
+WARN_NO_PARAMDOC       = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_FORMAT            = "$file:$line: $text"

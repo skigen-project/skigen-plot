@@ -1,0 +1,85 @@
+---
+sidebar_position: 5
+title: Camera3D
+---
+
+# Camera3D
+
+Set up view and projection matrices for 3D visualizations — point clouds, surface meshes, and volumetric data.
+
+## API
+
+```cpp
+class Camera3D {
+public:
+    Camera3D();
+
+    void lookAt(const Eigen::Vector3f& eye,
+                const Eigen::Vector3f& target,
+                const Eigen::Vector3f& up = Eigen::Vector3f::UnitY());
+
+    void setPerspective(float fovDegrees, float aspect,
+                        float nearPlane, float farPlane);
+
+    auto viewMatrix()           const -> Eigen::Matrix4f;
+    auto projectionMatrix()     const -> Eigen::Matrix4f;
+    auto viewProjectionMatrix() const -> Eigen::Matrix4f;
+
+    auto position() const -> const Eigen::Vector3f&;
+    auto target()   const -> const Eigen::Vector3f&;
+};
+```
+
+## Methods
+
+| Method | Description |
+|--------|-------------|
+| `lookAt(eye, target, up)` | Position camera at `eye`, looking at `target` |
+| `setPerspective(fov, aspect, near, far)` | Set perspective projection parameters |
+| `viewMatrix()` | Returns the 4×4 view (camera) matrix |
+| `projectionMatrix()` | Returns the 4×4 perspective projection matrix |
+| `viewProjectionMatrix()` | Returns `projection × view` |
+
+## Default Values
+
+| Parameter | Default |
+|-----------|---------|
+| Eye position | `(0, 0, 5)` |
+| Target | `(0, 0, 0)` |
+| Up | `(0, 1, 0)` |
+| FOV | 45° |
+| Aspect | 1.0 |
+| Near | 0.1 |
+| Far | 100.0 |
+
+## View Matrix
+
+The view matrix transforms world coordinates to camera space using a standard right-handed look-at construction:
+
+$$
+V = \begin{bmatrix} r_x & r_y & r_z & -\mathbf{r} \cdot \mathbf{e} \\ u_x & u_y & u_z & -\mathbf{u} \cdot \mathbf{e} \\ -f_x & -f_y & -f_z & \mathbf{f} \cdot \mathbf{e} \\ 0 & 0 & 0 & 1 \end{bmatrix}
+$$
+
+where $\mathbf{f} = \text{normalize}(\text{target} - \text{eye})$, $\mathbf{r} = \mathbf{f} \times \mathbf{up}$, $\mathbf{u} = \mathbf{r} \times \mathbf{f}$.
+
+## Example
+
+```cpp
+Skigen::Plot::Camera3D camera;
+camera.lookAt({3.f, 3.f, 3.f}, {0.f, 0.f, 0.f});
+camera.setPerspective(45.f, 16.f / 9.f, 0.1f, 50.f);
+
+Skigen::Plot::PlotView view;
+view.pointCloud(vertices);
+view.setCamera(camera);
+view.show();
+```
+
+## Integration with mne-cpp
+
+Camera3D produces standard 4×4 matrices compatible with any rendering pipeline:
+
+```cpp
+Eigen::Matrix4f mvp = camera.viewProjectionMatrix();
+// Use with any QRhi-based renderer
+```
