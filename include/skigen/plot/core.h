@@ -38,6 +38,7 @@ struct SKIGENPLOT_EXPORT BoundingBox2D {
     auto height() const -> float { return max.y() - min.y(); }
     auto center() const -> Eigen::Vector2f { return (min + max) * 0.5f; }
     auto expanded(float margin) const -> BoundingBox2D;
+    auto merge(const BoundingBox2D& other) const -> BoundingBox2D;
 
     template <typename DerivedX, typename DerivedY>
     static auto fromXY(const Eigen::MatrixBase<DerivedX>& x,

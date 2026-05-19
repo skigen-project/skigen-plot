@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The Skigen Contributors
 
-// point_cloud.cpp — 3D point cloud with camera setup
 #include <skigen/plot/plotview.h>
 #include <Eigen/Core>
 #include <QApplication>
@@ -10,7 +9,6 @@
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
-    //! [example_point_cloud]
     std::mt19937 rng(123);
     std::normal_distribution<float> dist(0.f, 1.f);
 
@@ -23,6 +21,7 @@ int main(int argc, char* argv[]) {
     }
 
     Skigen::Plot::PlotView view;
+    view.setTitle("3D Point Cloud");
     view.pointCloud(vertices);
 
     Skigen::Plot::Camera3D camera;
@@ -33,7 +32,6 @@ int main(int argc, char* argv[]) {
     view.resize(800, 600);
     view.setWindowTitle("SkigenPlot — Point Cloud");
     view.show();
-    //! [example_point_cloud]
 
     return app.exec();
 }

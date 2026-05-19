@@ -350,6 +350,39 @@ void test_theme_light() {
 }
 
 // ---------------------------------------------------------------------------
+// BoundingBox2D::merge tests
+// ---------------------------------------------------------------------------
+
+void test_bbox2d_merge_basic() {
+    Skigen::Plot::BoundingBox2D a;
+    a.min = Eigen::Vector2f(0.f, 0.f);
+    a.max = Eigen::Vector2f(5.f, 5.f);
+
+    Skigen::Plot::BoundingBox2D b;
+    b.min = Eigen::Vector2f(-2.f, 1.f);
+    b.max = Eigen::Vector2f(3.f, 8.f);
+
+    auto merged = a.merge(b);
+    ASSERT_NEAR(merged.min.x(), -2.f, 1e-6f);
+    ASSERT_NEAR(merged.min.y(),  0.f, 1e-6f);
+    ASSERT_NEAR(merged.max.x(),  5.f, 1e-6f);
+    ASSERT_NEAR(merged.max.y(),  8.f, 1e-6f);
+}
+
+void test_bbox2d_merge_default() {
+    Skigen::Plot::BoundingBox2D a;
+    Skigen::Plot::BoundingBox2D b;
+    b.min = Eigen::Vector2f(1.f, 2.f);
+    b.max = Eigen::Vector2f(3.f, 4.f);
+
+    auto merged = a.merge(b);
+    ASSERT_NEAR(merged.min.x(), 1.f, 1e-6f);
+    ASSERT_NEAR(merged.min.y(), 2.f, 1e-6f);
+    ASSERT_NEAR(merged.max.x(), 3.f, 1e-6f);
+    ASSERT_NEAR(merged.max.y(), 4.f, 1e-6f);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -360,6 +393,8 @@ int main() {
     run_test("bbox2d_from_xy",             test_bbox2d_from_xy);
     run_test("bbox2d_width_height_center", test_bbox2d_width_height_center);
     run_test("bbox2d_expanded",            test_bbox2d_expanded);
+    run_test("bbox2d_merge_basic",         test_bbox2d_merge_basic);
+    run_test("bbox2d_merge_default",       test_bbox2d_merge_default);
     run_test("bbox3d_from_vertices",       test_bbox3d_from_vertices);
     run_test("bbox3d_diagonal",            test_bbox3d_diagonal);
     run_test("bbox3d_center",              test_bbox3d_center);

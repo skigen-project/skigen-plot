@@ -15,6 +15,15 @@ auto BoundingBox2D::expanded(float margin) const -> BoundingBox2D {
             max + Eigen::Vector2f(mx, my)};
 }
 
+auto BoundingBox2D::merge(const BoundingBox2D& other) const -> BoundingBox2D {
+    BoundingBox2D result;
+    result.min.x() = std::min(min.x(), other.min.x());
+    result.min.y() = std::min(min.y(), other.min.y());
+    result.max.x() = std::max(max.x(), other.max.x());
+    result.max.y() = std::max(max.y(), other.max.y());
+    return result;
+}
+
 // ── BoundingBox3D ────────────────────────────────────────────────────────
 
 auto BoundingBox3D::diagonal() const -> float {
@@ -181,9 +190,9 @@ auto computeVertexNormals(std::span<const float> vertices, int vertexCount,
 
 auto Theme::dark() -> Theme {
     Theme t;
-    t.background = {0.047f, 0.039f, 0.102f, 1.0f};
-    t.gridColor  = {0.15f, 0.15f, 0.25f, 0.4f};
-    t.axisColor  = {0.35f, 0.35f, 0.50f, 0.8f};
+    t.background = {0.035f, 0.031f, 0.082f, 1.0f};
+    t.gridColor  = {0.12f, 0.12f, 0.22f, 0.25f};
+    t.axisColor  = {0.30f, 0.30f, 0.48f, 0.7f};
     t.textColor  = {0.85f, 0.85f, 0.90f, 1.0f};
     t.seriesColors = {{
         {0.024f, 0.714f, 0.831f, 1.0f},  // #06b6d4 cyan
@@ -198,9 +207,9 @@ auto Theme::dark() -> Theme {
 
 auto Theme::light() -> Theme {
     Theme t;
-    t.background = {0.973f, 0.980f, 0.988f, 1.0f};
-    t.gridColor  = {0.886f, 0.910f, 0.941f, 0.6f};
-    t.axisColor  = {0.392f, 0.455f, 0.545f, 0.9f};
+    t.background = {0.976f, 0.980f, 0.992f, 1.0f};
+    t.gridColor  = {0.85f, 0.87f, 0.92f, 0.35f};
+    t.axisColor  = {0.35f, 0.40f, 0.50f, 0.8f};
     t.textColor  = {0.15f, 0.23f, 0.33f, 1.0f};
     t.seriesColors = {{
         {0.016f, 0.565f, 0.659f, 1.0f},  // darker cyan

@@ -47,6 +47,8 @@ find_package(Qt6 QUIET COMPONENTS GuiPrivate)
 add_library(SkigenPlot
     src/core.cpp
     src/plotview.cpp
+    src/overlay.cpp
+    src/overlay.h
     include/skigen/plot/plotview.h
 )
 add_library(SkigenPlot::SkigenPlot ALIAS SkigenPlot)

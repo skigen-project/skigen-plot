@@ -1,9 +1,14 @@
 #include <skigen/plot/plotview.h>
 
+#include "overlay.h"
+
 #include <rhi/qrhi.h>
 
 #include <QFile>
 #include <QImage>
+#include <QLabel>
+#include <QMouseEvent>
+#include <QResizeEvent>
 
 #include <algorithm>
 #include <cmath>
@@ -15,11 +20,12 @@ using namespace Qt::StringLiterals;
 
 namespace Skigen::Plot {
 
-// ── Render mode ─────────────────────────────────────────────────────────
+// ── Render mode (for 3D, which stays single-dataset) ───────────────
 
-enum class RenderMode { None, Line2D, Scatter2D, PointCloud3D, Mesh3D };
+enum class RenderMode3D { None, PointCloud, Mesh };
+enum class SeriesKind { Line, Scatter };
 
-// ── Shader loading ──────────────────────────────────────────────────────
+// ── Shader loading ─────────────────────────────────────────────────
 
 static auto loadShader(const QString& path)
     -> std::expected<QShader, QString>
@@ -33,12 +39,30 @@ static auto loadShader(const QString& path)
     return shader;
 }
 
-// ── PIMPL ───────────────────────────────────────────────────────────────
+// ── Per-series GPU state ───────────────────────────────────────────
+
+struct Series2D {
+    SeriesKind kind;
+    std::vector<float> vertices;
+    int vertexCount = 0;
+    Eigen::Vector4f color;
+    float pointSize = 5.0f;
+    bool dirty = true;
+
+    QRhiBuffer* vb = nullptr;
+    QRhiBuffer* ub = nullptr;
+    QRhiShaderResourceBindings* srb = nullptr;
+    int vbCapacity = 0;
+};
+
+// ── PIMPL ──────────────────────────────────────────────────────────
 
 struct PlotView::Impl {
-    RenderMode mode = RenderMode::None;
+    // 2D series
+    std::vector<Series2D> series2d;
+    int nextColorIndex = 0;
 
-    // 2D pipelines
+    // Shared pipelines (all Line2D series share linePipeline, etc.)
     std::unique_ptr<QRhiGraphicsPipeline> linePipeline;
     std::unique_ptr<QRhiGraphicsPipeline> pointPipeline;
     std::unique_ptr<QRhiGraphicsPipeline> gridPipeline;
@@ -47,19 +71,15 @@ struct PlotView::Impl {
     std::unique_ptr<QRhiGraphicsPipeline> point3dPipeline;
     std::unique_ptr<QRhiGraphicsPipeline> meshPipeline;
 
-    // 2D vertex data (interleaved x, y pairs)
-    std::unique_ptr<QRhiBuffer> vertexBuffer;
-    std::vector<float> vertices;
-    int vertexCount = 0;
-    int vertexCapacity = 0;
-    bool dataDirty = false;
-
-    // 3D vertex data (interleaved x, y, z)
+    // 3D data (single dataset)
+    RenderMode3D mode3d = RenderMode3D::None;
     std::unique_ptr<QRhiBuffer> vertex3dBuffer;
     std::vector<float> vertices3d;
     int vertex3dCount = 0;
     int vertex3dCapacity = 0;
     bool data3dDirty = false;
+    Eigen::Vector4f data3dColor{0.024f, 0.714f, 0.831f, 1.0f};
+    float data3dPointSize = 5.0f;
 
     // Mesh index data
     std::unique_ptr<QRhiBuffer> indexBuffer;
@@ -67,6 +87,12 @@ struct PlotView::Impl {
     int indexCount = 0;
     int indexCapacity = 0;
     bool indexDirty = false;
+
+    // 3D uniform buffers
+    std::unique_ptr<QRhiBuffer> point3dUniformBuffer;
+    std::unique_ptr<QRhiBuffer> meshUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> point3dSrb;
+    std::unique_ptr<QRhiShaderResourceBindings> meshSrb;
 
     // Grid vertex data
     std::unique_ptr<QRhiBuffer> gridVertexBuffer;
@@ -77,19 +103,9 @@ struct PlotView::Impl {
     int gridVertexCapacity = 0;
     bool gridDirty = false;
 
-    // Uniform buffers (separate per draw layer)
-    std::unique_ptr<QRhiBuffer> lineUniformBuffer;     // 80 B
-    std::unique_ptr<QRhiBuffer> scatterUniformBuffer;  // 96 B
-    std::unique_ptr<QRhiBuffer> point3dUniformBuffer;  // 96 B
-    std::unique_ptr<QRhiBuffer> meshUniformBuffer;     // 112 B
-    std::unique_ptr<QRhiBuffer> gridUniformBuffer;     // 80 B
-    std::unique_ptr<QRhiBuffer> axisUniformBuffer;     // 80 B
-
-    // Shader resource bindings
-    std::unique_ptr<QRhiShaderResourceBindings> lineSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> scatterSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> point3dSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> meshSrb;
+    // Grid uniform buffers
+    std::unique_ptr<QRhiBuffer> gridUniformBuffer;
+    std::unique_ptr<QRhiBuffer> axisUniformBuffer;
     std::unique_ptr<QRhiShaderResourceBindings> gridSrb;
     std::unique_ptr<QRhiShaderResourceBindings> axisSrb;
 
@@ -103,36 +119,27 @@ struct PlotView::Impl {
 
     // Appearance
     Theme theme = Theme::dark();
-    std::optional<Eigen::Vector4f> userLineColor;
     std::optional<Eigen::Vector4f> userBgColor;
-    float pointSize = 4.0f;
+    float defaultPointSize = 5.0f;
     bool showGrid = true;
     bool showAxes = true;
+
+    // UI
+    QLabel* titleLabel = nullptr;
+    PlotOverlay* overlay = nullptr;
+    bool overlayEnabled = true;
+
+    bool has2D() const { return !series2d.empty(); }
+    bool has3D() const { return mode3d != RenderMode3D::None; }
+    bool hasData() const { return has2D() || has3D(); }
 };
 
-// ── Helpers ─────────────────────────────────────────────────────────────
-
-static void interleave2D(std::span<const float> x, std::span<const float> y,
-                         std::vector<float>& out, int& count,
-                         BoundingBox2D& bounds)
-{
-    auto n = static_cast<int>(std::min(x.size(), y.size()));
-    out.resize(static_cast<std::size_t>(n) * 2);
-    for (int i = 0; i < n; ++i) {
-        out[static_cast<std::size_t>(i) * 2]     = x[static_cast<std::size_t>(i)];
-        out[static_cast<std::size_t>(i) * 2 + 1] = y[static_cast<std::size_t>(i)];
-    }
-    count = n;
-    bounds = BoundingBox2D::fromXY(
-        Eigen::Map<const Eigen::VectorXf>(x.data(), static_cast<Eigen::Index>(x.size())),
-        Eigen::Map<const Eigen::VectorXf>(y.data(), static_cast<Eigen::Index>(y.size())));
-}
+// ── Helpers ────────────────────────────────────────────────────────
 
 static auto makeSrb(QRhi* r, QRhiBuffer* ub)
-    -> std::unique_ptr<QRhiShaderResourceBindings>
+    -> QRhiShaderResourceBindings*
 {
-    auto srb = std::unique_ptr<QRhiShaderResourceBindings>(
-        r->newShaderResourceBindings());
+    auto* srb = r->newShaderResourceBindings();
     srb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(
             0,
@@ -142,6 +149,12 @@ static auto makeSrb(QRhi* r, QRhiBuffer* ub)
     });
     srb->create();
     return srb;
+}
+
+static auto makeUniqueSrb(QRhi* r, QRhiBuffer* ub)
+    -> std::unique_ptr<QRhiShaderResourceBindings>
+{
+    return std::unique_ptr<QRhiShaderResourceBindings>(makeSrb(r, ub));
 }
 
 static auto makeUB(QRhi* r, quint32 size) -> std::unique_ptr<QRhiBuffer> {
@@ -160,38 +173,103 @@ static auto makeDynBuf(QRhi* r, QRhiBuffer::UsageFlag usage, quint32 size)
     return buf;
 }
 
-// ── Construction ────────────────────────────────────────────────────────
+static auto makeRawDynBuf(QRhi* r, QRhiBuffer::UsageFlag usage, quint32 size)
+    -> QRhiBuffer*
+{
+    auto* buf = r->newBuffer(QRhiBuffer::Dynamic, usage, size);
+    buf->create();
+    return buf;
+}
+
+static auto makeRawUB(QRhi* r, quint32 size) -> QRhiBuffer* {
+    auto* buf = r->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, size);
+    buf->create();
+    return buf;
+}
+
+// ── Construction ───────────────────────────────────────────────────
 
 PlotView::PlotView(QWidget* parent)
     : QRhiWidget(parent)
     , d(std::make_unique<Impl>())
 {
+    setMouseTracking(true);
+
+    d->titleLabel = new QLabel(this);
+    d->titleLabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    d->titleLabel->hide();
+
+    d->overlay = new PlotOverlay(this);
 }
 
-PlotView::~PlotView() = default;
-
-// ── Data setters ────────────────────────────────────────────────────────
-
-void PlotView::setLineData(std::span<const float> x,
-                           std::span<const float> y) {
-    interleave2D(x, y, d->vertices, d->vertexCount, d->bounds2d);
-    d->mode = RenderMode::Line2D;
-    d->dataDirty = true;
-    d->gridDirty = true;
-    update();
+PlotView::~PlotView() {
+    for (auto& s : d->series2d) {
+        delete s.vb;
+        delete s.ub;
+        delete s.srb;
+    }
 }
 
-void PlotView::setScatterData(std::span<const float> x,
-                              std::span<const float> y) {
-    interleave2D(x, y, d->vertices, d->vertexCount, d->bounds2d);
-    d->mode = RenderMode::Scatter2D;
-    d->dataDirty = true;
+// ── Data setters ───────────────────────────────────────────────────
+
+void PlotView::addLineSeries(std::span<const float> x,
+                              std::span<const float> y,
+                              const PlotStyle& style) {
+    addSeriesImpl(static_cast<int>(SeriesKind::Line), x, y, style);
+}
+
+void PlotView::addScatterSeries(std::span<const float> x,
+                                 std::span<const float> y,
+                                 const PlotStyle& style) {
+    addSeriesImpl(static_cast<int>(SeriesKind::Scatter), x, y, style);
+}
+
+void PlotView::addSeriesImpl(int kindInt,
+                              std::span<const float> x,
+                              std::span<const float> y,
+                              const PlotStyle& style) {
+    auto kind = static_cast<SeriesKind>(kindInt);
+    auto n = static_cast<int>(std::min(x.size(), y.size()));
+
+    Series2D series;
+    series.kind = kind;
+    series.vertices.resize(static_cast<std::size_t>(n) * 2);
+    for (int i = 0; i < n; ++i) {
+        series.vertices[static_cast<std::size_t>(i) * 2]     = x[static_cast<std::size_t>(i)];
+        series.vertices[static_cast<std::size_t>(i) * 2 + 1] = y[static_cast<std::size_t>(i)];
+    }
+    series.vertexCount = n;
+
+    int colorIdx = d->nextColorIndex;
+    d->nextColorIndex++;
+    Eigen::Vector4f resolvedColor = style.color.value_or(
+        d->theme.seriesColors[static_cast<std::size_t>(colorIdx) % d->theme.seriesColors.size()]);
+    if (style.opacity < 1.0f)
+        resolvedColor.w() = style.opacity;
+    series.color = resolvedColor;
+    series.pointSize = style.pointSize;
+    series.dirty = true;
+
+    if (d->pipelineReady) {
+        auto* r = rhi();
+        quint32 ubSize = (kind == SeriesKind::Scatter) ? 96u : 80u;
+        series.ub = makeRawUB(r, ubSize);
+        series.srb = makeSrb(r, series.ub);
+        int floats = static_cast<int>(series.vertices.size());
+        series.vb = makeRawDynBuf(r, QRhiBuffer::VertexBuffer,
+                                   quint32(floats * sizeof(float)));
+        series.vbCapacity = floats;
+    }
+
+    d->series2d.push_back(std::move(series));
+    recomputeBounds();
     d->gridDirty = true;
     update();
 }
 
 void PlotView::setPointCloudData(std::span<const float> data,
-                                 int vertexCount) {
+                                  int vertexCount,
+                                  const PlotStyle& style) {
     d->vertices3d.resize(static_cast<std::size_t>(vertexCount) * 3);
     for (int i = 0; i < vertexCount; ++i) {
         d->vertices3d[static_cast<std::size_t>(i) * 3]     = data[static_cast<std::size_t>(i)];
@@ -209,13 +287,16 @@ void PlotView::setPointCloudData(std::span<const float> data,
         }
     }
 
-    d->mode = RenderMode::PointCloud3D;
+    d->data3dColor = style.color.value_or(d->theme.seriesColors[0]);
+    d->data3dPointSize = style.pointSize;
+    d->mode3d = RenderMode3D::PointCloud;
     d->data3dDirty = true;
     update();
 }
 
 void PlotView::setMeshData(std::span<const float> verts, int vertexCount,
-                           std::span<const uint32_t> idx, int triangleCount) {
+                            std::span<const uint32_t> idx, int triangleCount,
+                            const PlotStyle& style) {
     std::vector<float> rowMajorVerts(static_cast<std::size_t>(vertexCount) * 3);
     for (int i = 0; i < vertexCount; ++i) {
         rowMajorVerts[static_cast<std::size_t>(i) * 3]     = verts[static_cast<std::size_t>(i)];
@@ -244,18 +325,53 @@ void PlotView::setMeshData(std::span<const float> verts, int vertexCount,
         }
     }
 
-    d->mode = RenderMode::Mesh3D;
+    d->data3dColor = style.color.value_or(d->theme.seriesColors[0]);
+    d->mode3d = RenderMode3D::Mesh;
     d->data3dDirty = true;
     d->indexDirty = true;
     update();
 }
 
-// ── Appearance ──────────────────────────────────────────────────────────
+// ── Scene management ───────────────────────────────────────────────
 
-void PlotView::setLineColor(const Eigen::Vector4f& rgba) {
-    d->userLineColor = rgba;
+void PlotView::clear() {
+    for (auto& s : d->series2d) {
+        delete s.vb;
+        delete s.ub;
+        delete s.srb;
+    }
+    d->series2d.clear();
+    d->nextColorIndex = 0;
+    d->mode3d = RenderMode3D::None;
+    d->bounds2d = BoundingBox2D();
+    d->viewBounds = BoundingBox2D();
+    d->gridDirty = true;
     update();
 }
+
+void PlotView::setTitle(const QString& title) {
+    if (title.isEmpty()) {
+        d->titleLabel->hide();
+        return;
+    }
+    d->titleLabel->setText(title);
+
+    auto f = d->titleLabel->font();
+    f.setPointSize(12);
+    f.setWeight(QFont::DemiBold);
+    d->titleLabel->setFont(f);
+
+    QPalette pal = d->titleLabel->palette();
+    auto tc = d->theme.textColor;
+    pal.setColor(QPalette::WindowText,
+                 QColor::fromRgbF(tc.x(), tc.y(), tc.z(), tc.w()));
+    d->titleLabel->setPalette(pal);
+    d->titleLabel->setAttribute(Qt::WA_TranslucentBackground);
+    d->titleLabel->show();
+    layoutChildren();
+}
+
+// ── Appearance ─────────────────────────────────────────────────────
 
 void PlotView::setBackgroundColor(const Eigen::Vector4f& rgba) {
     d->userBgColor = rgba;
@@ -263,13 +379,25 @@ void PlotView::setBackgroundColor(const Eigen::Vector4f& rgba) {
 }
 
 void PlotView::setPointSize(float size) {
-    d->pointSize = size;
+    d->defaultPointSize = size;
     update();
 }
 
 void PlotView::setTheme(const Theme& theme) {
     d->theme = theme;
     d->gridDirty = true;
+
+    bool isDark = theme.background.x() < 0.5f;
+    d->overlay->updateThemeColors(isDark);
+
+    if (d->titleLabel->isVisible()) {
+        QPalette pal = d->titleLabel->palette();
+        auto tc = d->theme.textColor;
+        pal.setColor(QPalette::WindowText,
+                     QColor::fromRgbF(tc.x(), tc.y(), tc.z(), tc.w()));
+        d->titleLabel->setPalette(pal);
+    }
+
     update();
 }
 
@@ -296,7 +424,32 @@ auto PlotView::camera() const -> const Camera3D& {
     return d->camera;
 }
 
-// ── Grid computation ────────────────────────────────────────────────────
+void PlotView::setOverlayVisible(bool visible) {
+    d->overlayEnabled = visible;
+    if (!visible)
+        d->overlay->hide();
+}
+
+// ── Bounds ─────────────────────────────────────────────────────────
+
+void PlotView::recomputeBounds() {
+    d->bounds2d = BoundingBox2D();
+    for (const auto& s : d->series2d) {
+        if (s.vertexCount == 0) continue;
+        BoundingBox2D sb;
+        for (int i = 0; i < s.vertexCount; ++i) {
+            float x = s.vertices[static_cast<std::size_t>(i) * 2];
+            float y = s.vertices[static_cast<std::size_t>(i) * 2 + 1];
+            if (x < sb.min.x()) sb.min.x() = x;
+            if (x > sb.max.x()) sb.max.x() = x;
+            if (y < sb.min.y()) sb.min.y() = y;
+            if (y > sb.max.y()) sb.max.y() = y;
+        }
+        d->bounds2d = d->bounds2d.merge(sb);
+    }
+}
+
+// ── Grid computation ───────────────────────────────────────────────
 
 void PlotView::computeGridVertices() {
     d->gridVertices.clear();
@@ -347,7 +500,31 @@ void PlotView::computeGridVertices() {
     d->gridDirty = false;
 }
 
-// ── QRhiWidget overrides ────────────────────────────────────────────────
+// ── Layout ─────────────────────────────────────────────────────────
+
+void PlotView::layoutChildren() {
+    if (d->titleLabel && d->titleLabel->isVisible()) {
+        d->titleLabel->setGeometry(0, 8, width(), 30);
+    }
+    if (d->overlay) {
+        int ox = width() - d->overlay->width() - 12;
+        int oy = height() - d->overlay->height() - 12;
+        d->overlay->move(ox, oy);
+    }
+}
+
+void PlotView::resizeEvent(QResizeEvent* event) {
+    QRhiWidget::resizeEvent(event);
+    layoutChildren();
+}
+
+void PlotView::mouseMoveEvent(QMouseEvent* event) {
+    QRhiWidget::mouseMoveEvent(event);
+    if (d->overlayEnabled)
+        d->overlay->showTemporarily();
+}
+
+// ── QRhiWidget overrides ───────────────────────────────────────────
 
 void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     auto* r = rhi();
@@ -356,11 +533,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     static constexpr int kInitialFloats = 128 * 1024;
     int sc = renderTarget()->sampleCount();
 
-    // ── Vertex buffers ──────────────────────────────────────────────────
-    d->vertexCapacity = kInitialFloats;
-    d->vertexBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
-                                  quint32(kInitialFloats * sizeof(float)));
-
+    // ── 3D vertex + index buffers ──────────────────────────────────
     d->vertex3dCapacity = kInitialFloats;
     d->vertex3dBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
                                     quint32(kInitialFloats * sizeof(float)));
@@ -369,27 +542,36 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->indexBuffer = makeDynBuf(r, QRhiBuffer::IndexBuffer,
                                  quint32(kInitialFloats * sizeof(uint32_t)));
 
+    // ── Grid vertex buffer ─────────────────────────────────────────
     d->gridVertexCapacity = kInitialFloats;
     d->gridVertexBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
                                       quint32(kInitialFloats * sizeof(float)));
 
-    // ── Uniform buffers ─────────────────────────────────────────────────
-    d->lineUniformBuffer    = makeUB(r, 80);
-    d->scatterUniformBuffer = makeUB(r, 96);
+    // ── Uniform buffers (grid, axis, 3D) ───────────────────────────
     d->point3dUniformBuffer = makeUB(r, 96);
     d->meshUniformBuffer    = makeUB(r, 112);
     d->gridUniformBuffer    = makeUB(r, 80);
     d->axisUniformBuffer    = makeUB(r, 80);
 
-    // ── SRBs ────────────────────────────────────────────────────────────
-    d->lineSrb    = makeSrb(r, d->lineUniformBuffer.get());
-    d->scatterSrb = makeSrb(r, d->scatterUniformBuffer.get());
-    d->point3dSrb = makeSrb(r, d->point3dUniformBuffer.get());
-    d->meshSrb    = makeSrb(r, d->meshUniformBuffer.get());
-    d->gridSrb    = makeSrb(r, d->gridUniformBuffer.get());
-    d->axisSrb    = makeSrb(r, d->axisUniformBuffer.get());
+    // ── SRBs ───────────────────────────────────────────────────────
+    d->point3dSrb = makeUniqueSrb(r, d->point3dUniformBuffer.get());
+    d->meshSrb    = makeUniqueSrb(r, d->meshUniformBuffer.get());
+    d->gridSrb    = makeUniqueSrb(r, d->gridUniformBuffer.get());
+    d->axisSrb    = makeUniqueSrb(r, d->axisUniformBuffer.get());
 
-    // ── Load shaders ────────────────────────────────────────────────────
+    // ── Create per-series GPU resources ────────────────────────────
+    for (auto& s : d->series2d) {
+        quint32 ubSize = (s.kind == SeriesKind::Scatter) ? 96u : 80u;
+        s.ub = makeRawUB(r, ubSize);
+        s.srb = makeSrb(r, s.ub);
+        int floats = static_cast<int>(s.vertices.size());
+        s.vb = makeRawDynBuf(r, QRhiBuffer::VertexBuffer,
+                              quint32(std::max(floats, 1) * sizeof(float)));
+        s.vbCapacity = std::max(floats, 1);
+        s.dirty = true;
+    }
+
+    // ── Load shaders ───────────────────────────────────────────────
     auto lineVs  = loadShader(u":/skigen/plot/line2d.vert.qsb"_s);
     auto lineFs  = loadShader(u":/skigen/plot/line2d.frag.qsb"_s);
     auto pointVs = loadShader(u":/skigen/plot/point2d.vert.qsb"_s);
@@ -406,21 +588,21 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
 
     auto* rpDesc = renderTarget()->renderPassDescriptor();
 
-    // ── 2D vertex layout (vec2, stride 8) ───────────────────────────────
+    // ── 2D vertex layout (vec2, stride 8) ──────────────────────────
     QRhiVertexInputLayout layout2d;
     layout2d.setBindings({QRhiVertexInputBinding(2 * sizeof(float))});
     layout2d.setAttributes({
         QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float2, 0)
     });
 
-    // ── 3D point layout (vec3, stride 12) ───────────────────────────────
+    // ── 3D point layout (vec3, stride 12) ──────────────────────────
     QRhiVertexInputLayout layout3dPoint;
     layout3dPoint.setBindings({QRhiVertexInputBinding(3 * sizeof(float))});
     layout3dPoint.setAttributes({
         QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float3, 0)
     });
 
-    // ── 3D mesh layout (vec3 pos + vec3 normal, stride 24) ──────────────
+    // ── 3D mesh layout (vec3 pos + vec3 normal, stride 24) ─────────
     QRhiVertexInputLayout layoutMesh;
     layoutMesh.setBindings({QRhiVertexInputBinding(6 * sizeof(float))});
     layoutMesh.setAttributes({
@@ -429,7 +611,10 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
                                  3 * sizeof(float))
     });
 
-    // ── Line pipeline (LineStrip, no depth) ─────────────────────────────
+    // We need a reference SRB for pipeline creation — use gridSrb
+    // (all 2D SRBs are layout-compatible: single UB at binding 0)
+
+    // ── Line pipeline (LineStrip, no depth) ────────────────────────
     d->linePipeline.reset(r->newGraphicsPipeline());
     d->linePipeline->setTopology(QRhiGraphicsPipeline::LineStrip);
     d->linePipeline->setShaderStages({
@@ -437,12 +622,12 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
         {QRhiShaderStage::Fragment, *lineFs}
     });
     d->linePipeline->setVertexInputLayout(layout2d);
-    d->linePipeline->setShaderResourceBindings(d->lineSrb.get());
+    d->linePipeline->setShaderResourceBindings(d->gridSrb.get());
     d->linePipeline->setRenderPassDescriptor(rpDesc);
     d->linePipeline->setSampleCount(sc);
     d->linePipeline->create();
 
-    // ── Grid pipeline (Lines, no depth) ─────────────────────────────────
+    // ── Grid pipeline (Lines, no depth, alpha blending) ────────────
     d->gridPipeline.reset(r->newGraphicsPipeline());
     d->gridPipeline->setTopology(QRhiGraphicsPipeline::Lines);
     d->gridPipeline->setShaderStages({
@@ -462,7 +647,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->gridPipeline->setTargetBlends({blend});
     d->gridPipeline->create();
 
-    // ── Point pipeline (Points, no depth) ───────────────────────────────
+    // ── Point pipeline (Points, no depth) ──────────────────────────
     d->pointPipeline.reset(r->newGraphicsPipeline());
     d->pointPipeline->setTopology(QRhiGraphicsPipeline::Points);
     d->pointPipeline->setShaderStages({
@@ -470,12 +655,12 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
         {QRhiShaderStage::Fragment, *pointFs}
     });
     d->pointPipeline->setVertexInputLayout(layout2d);
-    d->pointPipeline->setShaderResourceBindings(d->scatterSrb.get());
+    d->pointPipeline->setShaderResourceBindings(d->gridSrb.get());
     d->pointPipeline->setRenderPassDescriptor(rpDesc);
     d->pointPipeline->setSampleCount(sc);
     d->pointPipeline->create();
 
-    // ── 3D Point pipeline (Points, depth enabled) ───────────────────────
+    // ── 3D Point pipeline (Points, depth enabled) ──────────────────
     d->point3dPipeline.reset(r->newGraphicsPipeline());
     d->point3dPipeline->setTopology(QRhiGraphicsPipeline::Points);
     d->point3dPipeline->setShaderStages({
@@ -490,7 +675,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->point3dPipeline->setDepthWrite(true);
     d->point3dPipeline->create();
 
-    // ── Mesh pipeline (Triangles, depth enabled) ────────────────────────
+    // ── Mesh pipeline (Triangles, depth enabled) ───────────────────
     d->meshPipeline.reset(r->newGraphicsPipeline());
     d->meshPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
     d->meshPipeline->setShaderStages({
@@ -506,14 +691,15 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->meshPipeline->create();
 
     d->pipelineReady = true;
-    d->dataDirty = true;
     d->data3dDirty = true;
     d->indexDirty = true;
     d->gridDirty = true;
+    for (auto& s : d->series2d)
+        s.dirty = true;
 }
 
 void PlotView::render(QRhiCommandBuffer* cb) {
-    if (!d->pipelineReady || d->mode == RenderMode::None)
+    if (!d->pipelineReady || !d->hasData())
         return;
 
     auto* r = rhi();
@@ -528,13 +714,13 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                                QRhiResourceUpdateBatch* u,
                                const QSize& sz) {
     auto* r = rhi();
-    bool is2D = (d->mode == RenderMode::Line2D || d->mode == RenderMode::Scatter2D);
+    bool is2D = d->has2D() && !d->has3D();
 
-    // ── Prepare grid (2D only) ──────────────────────────────────────────
+    // ── Prepare grid (2D only) ─────────────────────────────────────
     if (is2D && d->gridDirty)
         computeGridVertices();
 
-    // ── Compute MVP ─────────────────────────────────────────────────────
+    // ── Compute MVP ────────────────────────────────────────────────
     Eigen::Matrix4f mvp;
     if (is2D)
         mvp = orthoProjection(d->viewBounds, 0.02f);
@@ -548,25 +734,28 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
             corr(row, col) = correction(row, col);
     mvp = corr * mvp;
 
-    Eigen::Vector4f dataColor = d->userLineColor.value_or(d->theme.seriesColors[0]);
     Eigen::Vector4f bgColor = d->userBgColor.value_or(d->theme.background);
 
-    // ── Upload vertex data ──────────────────────────────────────────────
-    if (is2D) {
-        auto requiredFloats = static_cast<int>(d->vertices.size());
-        if (requiredFloats > d->vertexCapacity) {
-            d->vertexCapacity = requiredFloats * 2;
-            d->vertexBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
-                                          quint32(d->vertexCapacity * sizeof(float)));
-            d->dataDirty = true;
+    // ── Upload 2D series vertex data ───────────────────────────────
+    for (auto& s : d->series2d) {
+        auto requiredFloats = static_cast<int>(s.vertices.size());
+        if (requiredFloats > s.vbCapacity) {
+            delete s.vb;
+            s.vbCapacity = requiredFloats * 2;
+            s.vb = makeRawDynBuf(r, QRhiBuffer::VertexBuffer,
+                                  quint32(s.vbCapacity * sizeof(float)));
+            s.dirty = true;
         }
-        if (d->dataDirty) {
-            u->updateDynamicBuffer(d->vertexBuffer.get(), 0,
-                                   quint32(d->vertices.size() * sizeof(float)),
-                                   d->vertices.data());
-            d->dataDirty = false;
+        if (s.dirty) {
+            u->updateDynamicBuffer(s.vb, 0,
+                                   quint32(s.vertices.size() * sizeof(float)),
+                                   s.vertices.data());
+            s.dirty = false;
         }
-    } else {
+    }
+
+    // ── Upload 3D vertex data ──────────────────────────────────────
+    if (d->has3D()) {
         auto requiredFloats = static_cast<int>(d->vertices3d.size());
         if (requiredFloats > d->vertex3dCapacity) {
             d->vertex3dCapacity = requiredFloats * 2;
@@ -580,7 +769,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                                    d->vertices3d.data());
             d->data3dDirty = false;
         }
-        if (d->mode == RenderMode::Mesh3D && d->indexDirty) {
+        if (d->mode3d == RenderMode3D::Mesh && d->indexDirty) {
             auto requiredIdx = static_cast<int>(d->indices.size());
             if (requiredIdx > d->indexCapacity) {
                 d->indexCapacity = requiredIdx * 2;
@@ -594,7 +783,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         }
     }
 
-    // ── Upload grid vertex data (2D only) ───────────────────────────────
+    // ── Upload grid vertex data (2D only) ──────────────────────────
     if (is2D && (d->showGrid || d->showAxes)) {
         auto totalGridFloats = static_cast<int>(
             d->gridVertices.size() + d->axisVertices.size());
@@ -616,7 +805,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         }
     }
 
-    // ── Upload uniforms ─────────────────────────────────────────────────
+    // ── Upload grid uniforms ───────────────────────────────────────
     if (is2D && d->showGrid) {
         u->updateDynamicBuffer(d->gridUniformBuffer.get(), 0, 64, mvp.data());
         u->updateDynamicBuffer(d->gridUniformBuffer.get(), 64, 16,
@@ -628,39 +817,35 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                                d->theme.axisColor.data());
     }
 
-    switch (d->mode) {
-    case RenderMode::Line2D:
-        u->updateDynamicBuffer(d->lineUniformBuffer.get(), 0, 64, mvp.data());
-        u->updateDynamicBuffer(d->lineUniformBuffer.get(), 64, 16, dataColor.data());
-        break;
-    case RenderMode::Scatter2D: {
-        Eigen::Vector4f params(d->pointSize, 0.f, 0.f, 0.f);
-        u->updateDynamicBuffer(d->scatterUniformBuffer.get(), 0, 64, mvp.data());
-        u->updateDynamicBuffer(d->scatterUniformBuffer.get(), 64, 16, dataColor.data());
-        u->updateDynamicBuffer(d->scatterUniformBuffer.get(), 80, 16, params.data());
-        break;
+    // ── Upload per-series uniforms ─────────────────────────────────
+    for (auto& s : d->series2d) {
+        u->updateDynamicBuffer(s.ub, 0, 64, mvp.data());
+        u->updateDynamicBuffer(s.ub, 64, 16, s.color.data());
+        if (s.kind == SeriesKind::Scatter) {
+            Eigen::Vector4f params(s.pointSize, 0.f, 0.f, 0.f);
+            u->updateDynamicBuffer(s.ub, 80, 16, params.data());
+        }
     }
-    case RenderMode::PointCloud3D: {
-        Eigen::Vector4f params(d->pointSize, 0.f, 0.f, 0.f);
+
+    // ── Upload 3D uniforms ─────────────────────────────────────────
+    if (d->mode3d == RenderMode3D::PointCloud) {
+        Eigen::Vector4f params(d->data3dPointSize, 0.f, 0.f, 0.f);
         u->updateDynamicBuffer(d->point3dUniformBuffer.get(), 0, 64, mvp.data());
-        u->updateDynamicBuffer(d->point3dUniformBuffer.get(), 64, 16, dataColor.data());
+        u->updateDynamicBuffer(d->point3dUniformBuffer.get(), 64, 16,
+                               d->data3dColor.data());
         u->updateDynamicBuffer(d->point3dUniformBuffer.get(), 80, 16, params.data());
-        break;
     }
-    case RenderMode::Mesh3D: {
+    if (d->mode3d == RenderMode3D::Mesh) {
         Eigen::Vector4f lightDir = Eigen::Vector4f(1.f, 1.f, 1.f, 0.f).normalized();
         Eigen::Vector4f lightParams(0.3f, 0.7f, 0.f, 0.f);
         u->updateDynamicBuffer(d->meshUniformBuffer.get(), 0, 64, mvp.data());
-        u->updateDynamicBuffer(d->meshUniformBuffer.get(), 64, 16, dataColor.data());
+        u->updateDynamicBuffer(d->meshUniformBuffer.get(), 64, 16,
+                               d->data3dColor.data());
         u->updateDynamicBuffer(d->meshUniformBuffer.get(), 80, 16, lightDir.data());
         u->updateDynamicBuffer(d->meshUniformBuffer.get(), 96, 16, lightParams.data());
-        break;
-    }
-    default:
-        break;
     }
 
-    // ── Begin render pass ───────────────────────────────────────────────
+    // ── Begin render pass ──────────────────────────────────────────
     cb->beginPass(rt,
                   QColor::fromRgbF(bgColor.x(), bgColor.y(), bgColor.z(), bgColor.w()),
                   {1.0f, 0}, u);
@@ -669,7 +854,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                      static_cast<float>(sz.width()),
                      static_cast<float>(sz.height())});
 
-    // ── Draw grid (2D only) ─────────────────────────────────────────────
+    // ── Draw grid (2D only) ────────────────────────────────────────
     if (is2D && d->showGrid && d->gridVertexCount > 0) {
         cb->setGraphicsPipeline(d->gridPipeline.get());
         cb->setShaderResources(d->gridSrb.get());
@@ -678,7 +863,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         cb->draw(d->gridVertexCount);
     }
 
-    // ── Draw axes + ticks (2D only) ─────────────────────────────────────
+    // ── Draw axes + ticks (2D only) ────────────────────────────────
     if (is2D && d->showAxes && d->axisVertexCount > 0) {
         cb->setGraphicsPipeline(d->gridPipeline.get());
         cb->setShaderResources(d->axisSrb.get());
@@ -688,53 +873,46 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         cb->draw(d->axisVertexCount);
     }
 
-    // ── Draw data ───────────────────────────────────────────────────────
-    switch (d->mode) {
-    case RenderMode::Line2D: {
-        cb->setGraphicsPipeline(d->linePipeline.get());
-        cb->setShaderResources(d->lineSrb.get());
-        const QRhiCommandBuffer::VertexInput vbuf(d->vertexBuffer.get(), 0);
+    // ── Draw 2D series ─────────────────────────────────────────────
+    for (const auto& s : d->series2d) {
+        if (s.vertexCount <= 0) continue;
+
+        if (s.kind == SeriesKind::Line) {
+            cb->setGraphicsPipeline(d->linePipeline.get());
+        } else {
+            cb->setGraphicsPipeline(d->pointPipeline.get());
+        }
+        cb->setShaderResources(s.srb);
+        const QRhiCommandBuffer::VertexInput vbuf(s.vb, 0);
         cb->setVertexInput(0, 1, &vbuf);
-        cb->draw(d->vertexCount);
-        break;
+        cb->draw(s.vertexCount);
     }
-    case RenderMode::Scatter2D: {
-        cb->setGraphicsPipeline(d->pointPipeline.get());
-        cb->setShaderResources(d->scatterSrb.get());
-        const QRhiCommandBuffer::VertexInput vbuf(d->vertexBuffer.get(), 0);
-        cb->setVertexInput(0, 1, &vbuf);
-        cb->draw(d->vertexCount);
-        break;
-    }
-    case RenderMode::PointCloud3D: {
+
+    // ── Draw 3D data ───────────────────────────────────────────────
+    if (d->mode3d == RenderMode3D::PointCloud) {
         cb->setGraphicsPipeline(d->point3dPipeline.get());
         cb->setShaderResources(d->point3dSrb.get());
         const QRhiCommandBuffer::VertexInput vbuf(d->vertex3dBuffer.get(), 0);
         cb->setVertexInput(0, 1, &vbuf);
         cb->draw(d->vertex3dCount);
-        break;
     }
-    case RenderMode::Mesh3D: {
+    if (d->mode3d == RenderMode3D::Mesh) {
         cb->setGraphicsPipeline(d->meshPipeline.get());
         cb->setShaderResources(d->meshSrb.get());
         const QRhiCommandBuffer::VertexInput vbuf(d->vertex3dBuffer.get(), 0);
         cb->setVertexInput(0, 1, &vbuf, d->indexBuffer.get(), 0,
                            QRhiCommandBuffer::IndexUInt32);
         cb->drawIndexed(d->indexCount);
-        break;
-    }
-    default:
-        break;
     }
 
     cb->endPass();
 }
 
-// ── PNG export ──────────────────────────────────────────────────────────
+// ── PNG export ─────────────────────────────────────────────────────
 
 auto PlotView::savePng(const QString& path, int width, int height) -> bool {
     auto* r = rhi();
-    if (!r || !d->pipelineReady || d->mode == RenderMode::None)
+    if (!r || !d->pipelineReady || !d->hasData())
         return false;
 
     QSize sz(width, height);
@@ -765,10 +943,11 @@ auto PlotView::savePng(const QString& path, int width, int height) -> bool {
 
     auto* u = r->nextResourceUpdateBatch();
 
-    d->dataDirty = true;
     d->data3dDirty = true;
     d->indexDirty = true;
     d->gridDirty = true;
+    for (auto& s : d->series2d)
+        s.dirty = true;
 
     renderToTarget(cb, rt.get(), u, sz);
 
