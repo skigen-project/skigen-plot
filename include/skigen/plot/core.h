@@ -6,10 +6,12 @@
 #include <Eigen/Geometry>
 
 #include <concepts>
+#include <cstdint>
 #include <limits>
 #include <numbers>
 #include <ranges>
 #include <span>
+#include <vector>
 
 namespace Skigen::Plot {
 
@@ -126,5 +128,22 @@ auto normalizeMinMax(const Eigen::MatrixBase<Derived>& data)
         return Eigen::MatrixXf::Zero(data.rows(), data.cols());
     return (data.derived().template cast<float>().array() - lo) / range;
 }
+
+// ── Tick computation ────────────────────────────────────────────────────
+
+struct SKIGENPLOT_EXPORT TickResult {
+    std::vector<float> ticks;
+    float spacing = 1.f;
+};
+
+SKIGENPLOT_EXPORT
+auto computeTicks(float lo, float hi, int maxTicks = 10) -> TickResult;
+
+// ── Vertex normal computation ───────────────────────────────────────────
+
+SKIGENPLOT_EXPORT
+auto computeVertexNormals(std::span<const float> vertices, int vertexCount,
+                          std::span<const uint32_t> indices, int triangleCount)
+    -> std::vector<float>;
 
 } // namespace Skigen::Plot

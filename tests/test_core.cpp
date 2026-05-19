@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The Skigen Contributors
 
 #include <skigen/plot/core.h>
+#include <skigen/plot/theme.h>
 
 #include <Eigen/Core>
 
@@ -270,6 +271,85 @@ void test_map_range() {
 }
 
 // ---------------------------------------------------------------------------
+// Tick computation tests
+// ---------------------------------------------------------------------------
+
+void test_compute_ticks_basic() {
+    auto result = Skigen::Plot::computeTicks(0.f, 10.f);
+    ASSERT_TRUE(result.ticks.size() >= 3);
+    ASSERT_NEAR(result.ticks.front(), 0.f, 1e-6f);
+    ASSERT_NEAR(result.ticks.back(), 10.f, 1e-6f);
+    for (std::size_t i = 1; i < result.ticks.size(); ++i)
+        ASSERT_NEAR(result.ticks[i] - result.ticks[i - 1], result.spacing, 1e-5f);
+}
+
+void test_compute_ticks_symmetric() {
+    auto result = Skigen::Plot::computeTicks(-5.f, 5.f);
+    ASSERT_TRUE(result.ticks.size() >= 3);
+    bool hasZero = false;
+    for (float t : result.ticks)
+        if (std::abs(t) < 1e-5f) hasZero = true;
+    ASSERT_TRUE(hasZero);
+}
+
+void test_compute_ticks_small_range() {
+    auto result = Skigen::Plot::computeTicks(0.001f, 0.009f);
+    ASSERT_TRUE(result.ticks.size() >= 2);
+    ASSERT_TRUE(result.spacing > 0.f);
+}
+
+void test_compute_ticks_degenerate() {
+    auto result = Skigen::Plot::computeTicks(3.f, 3.f);
+    ASSERT_TRUE(result.ticks.size() >= 1);
+    ASSERT_NEAR(result.ticks[0], 3.f, 1e-6f);
+}
+
+// ---------------------------------------------------------------------------
+// Vertex normal tests
+// ---------------------------------------------------------------------------
+
+void test_vertex_normals_single_triangle() {
+    std::vector<float> verts = {0.f, 0.f, 0.f,  1.f, 0.f, 0.f,  0.f, 1.f, 0.f};
+    std::vector<uint32_t> idx = {0, 1, 2};
+    auto result = Skigen::Plot::computeVertexNormals(verts, 3, idx, 1);
+    ASSERT_TRUE(result.size() == 18);
+    // All normals should point in +Z direction
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_NEAR(result[static_cast<std::size_t>(i) * 6 + 3], 0.f, 1e-5f);
+        ASSERT_NEAR(result[static_cast<std::size_t>(i) * 6 + 4], 0.f, 1e-5f);
+        ASSERT_NEAR(result[static_cast<std::size_t>(i) * 6 + 5], 1.f, 1e-5f);
+    }
+}
+
+void test_vertex_normals_preserves_positions() {
+    std::vector<float> verts = {1.f, 2.f, 3.f,  4.f, 5.f, 6.f,  7.f, 8.f, 9.f};
+    std::vector<uint32_t> idx = {0, 1, 2};
+    auto result = Skigen::Plot::computeVertexNormals(verts, 3, idx, 1);
+    for (int i = 0; i < 3; ++i) {
+        auto vi = static_cast<std::size_t>(i);
+        ASSERT_NEAR(result[vi * 6],     verts[vi * 3],     1e-6f);
+        ASSERT_NEAR(result[vi * 6 + 1], verts[vi * 3 + 1], 1e-6f);
+        ASSERT_NEAR(result[vi * 6 + 2], verts[vi * 3 + 2], 1e-6f);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Theme tests
+// ---------------------------------------------------------------------------
+
+void test_theme_dark() {
+    auto t = Skigen::Plot::Theme::dark();
+    ASSERT_TRUE(t.background.norm() > 0.f);
+    ASSERT_TRUE(t.seriesColors[0].norm() > 0.f);
+}
+
+void test_theme_light() {
+    auto t = Skigen::Plot::Theme::light();
+    ASSERT_TRUE(t.background.x() > 0.9f);
+    ASSERT_TRUE(t.seriesColors[0].norm() > 0.f);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -293,6 +373,14 @@ int main() {
     run_test("normalize_min_max_basic",    test_normalize_min_max_basic);
     run_test("normalize_min_max_constant", test_normalize_min_max_constant);
     run_test("map_range",                  test_map_range);
+    run_test("compute_ticks_basic",        test_compute_ticks_basic);
+    run_test("compute_ticks_symmetric",    test_compute_ticks_symmetric);
+    run_test("compute_ticks_small_range",  test_compute_ticks_small_range);
+    run_test("compute_ticks_degenerate",   test_compute_ticks_degenerate);
+    run_test("vertex_normals_triangle",    test_vertex_normals_single_triangle);
+    run_test("vertex_normals_positions",   test_vertex_normals_preserves_positions);
+    run_test("theme_dark",                 test_theme_dark);
+    run_test("theme_light",                test_theme_light);
 
     std::cout << std::string(40, '-') << "\n";
     std::cout << g_passed << " passed, " << g_failed << " failed\n";

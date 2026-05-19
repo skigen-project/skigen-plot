@@ -2,12 +2,16 @@
 
 #include <skigen/plot/core.h>
 #include <skigen/plot/export.h>
+#include <skigen/plot/theme.h>
 
 #include <Eigen/Core>
 #include <QRhiWidget>
 
 #include <memory>
 #include <span>
+
+class QRhiResourceUpdateBatch;
+class QRhiRenderTarget;
 
 namespace Skigen::Plot {
 
@@ -70,11 +74,26 @@ public:
 
     void setLineColor(const Eigen::Vector4f& rgba);
     void setBackgroundColor(const Eigen::Vector4f& rgba);
+    void setPointSize(float size);
+
+    // ── Theme ────────────────────────────────────────────────────────────
+
+    void setTheme(const Theme& theme);
+    auto theme() const -> const Theme&;
+
+    // ── Grid and axes ────────────────────────────────────────────────────
+
+    void setGridVisible(bool visible);
+    void setAxesVisible(bool visible);
 
     // ── Camera (3D modes) ────────────────────────────────────────────────
 
     void setCamera(const Camera3D& camera);
     auto camera() const -> const Camera3D&;
+
+    // ── Export ───────────────────────────────────────────────────────────
+
+    auto savePng(const QString& path, int width, int height) -> bool;
 
 protected:
     void initialize(QRhiCommandBuffer* cb) override;
@@ -86,6 +105,12 @@ private:
     void setPointCloudData(std::span<const float> data, int vertexCount);
     void setMeshData(std::span<const float> verts, int vertexCount,
                      std::span<const uint32_t> idx, int triangleCount);
+
+    void computeGridVertices();
+    void renderToTarget(QRhiCommandBuffer* cb,
+                        QRhiRenderTarget* rt,
+                        QRhiResourceUpdateBatch* u,
+                        const QSize& sz);
 
     struct Impl;
     std::unique_ptr<Impl> d;
