@@ -54,10 +54,13 @@ public:
     // Labeled scatter — N×2 coordinates + N integer labels. Emits one
     // series per unique label so the theme palette colors cycle
     // automatically. Equivalent to matplotlib's `scatter(x, y, c=labels)`.
+    // Repeated calls with the same labels always use the same palette color,
+    // so centers can be drawn as hollow rings over the data points.
     template <typename DerivedXY, typename DerivedL>
         requires std::is_integral_v<typename DerivedL::Scalar>
     auto scatter(const Eigen::MatrixBase<DerivedXY>& points,
-                 const Eigen::MatrixBase<DerivedL>& labels) -> Figure&;
+                 const Eigen::MatrixBase<DerivedL>& labels,
+                 const PlotStyle& style = {}) -> Figure&;
 
     // ── Labels & theme (chainable) ─────────────────────────────────────
 
@@ -85,7 +88,7 @@ public:
 
 private:
     void scatterLabeled(std::span<const float> xy_rowmajor, int n,
-                        std::span<const int> labels);
+                        std::span<const int> labels, const PlotStyle& style);
 
     struct Impl;
     std::unique_ptr<Impl> d;
@@ -113,16 +116,16 @@ auto Figure::scatter(const Eigen::MatrixBase<DerivedX>& x,
 template <typename DerivedXY, typename DerivedL>
     requires std::is_integral_v<typename DerivedL::Scalar>
 auto Figure::scatter(const Eigen::MatrixBase<DerivedXY>& points,
-                     const Eigen::MatrixBase<DerivedL>& labels) -> Figure& {
-    // Materialise the inputs as float (RowMajor) + int so the impl can
-    // iterate by row regardless of the caller's storage order.
+                     const Eigen::MatrixBase<DerivedL>& labels,
+                     const PlotStyle& style) -> Figure& {
     using RowMajorXf = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic,
                                      Eigen::RowMajor>;
     RowMajorXf P = points.derived().template cast<float>();
     Eigen::VectorXi L = labels.derived().template cast<int>().eval();
     scatterLabeled({P.data(), static_cast<std::size_t>(P.size())},
                    static_cast<int>(P.rows()),
-                   {L.data(), static_cast<std::size_t>(L.size())});
+                   {L.data(), static_cast<std::size_t>(L.size())},
+                   style);
     return *this;
 }
 

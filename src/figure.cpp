@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -44,11 +45,13 @@ struct Figure::Impl {
     std::unique_ptr<QApplication> ownedApp;
     std::unique_ptr<PlotView>     view;
 
+    // Tracks which palette slot was assigned to each integer label so that
+    // repeated labeled-scatter calls (e.g. data points + centroids) always
+    // resolve to the same color per cluster.
+    std::map<int, std::size_t> labelColorSlot;
+    std::size_t nextColorSlot = 0;
+
     Impl() {
-        // Adopt an existing QApplication if the host already created one
-        // (e.g. embedded inside another Qt app); otherwise spin one up
-        // transparently so the user never has to write main()-level Qt
-        // boilerplate.
         if (QCoreApplication::instance() == nullptr) {
             ownedApp = std::make_unique<QApplication>(g_dummy_argc, g_dummy_argv);
         }
@@ -67,19 +70,20 @@ auto Figure::caption(const QString& s) -> Figure& { d->view->setCaption(s);     
 auto Figure::xlabel(const QString& s)  -> Figure& { d->view->setXAxisLabel(s);  return *this; }
 auto Figure::ylabel(const QString& s)  -> Figure& { d->view->setYAxisLabel(s);  return *this; }
 auto Figure::theme(const Theme& t)     -> Figure& { d->view->setTheme(t);       return *this; }
-auto Figure::clear()                   -> Figure& { d->view->clear();           return *this; }
+auto Figure::clear() -> Figure& { d->view->clear(); d->labelColorSlot.clear(); d->nextColorSlot = 0; return *this; }
 
 void Figure::scatterLabeled(std::span<const float> xy, int n,
-                            std::span<const int> labels) {
+                            std::span<const int> labels,
+                            const PlotStyle& inStyle) {
     if (n <= 0 || labels.size() != static_cast<std::size_t>(n) ||
         xy.size() != static_cast<std::size_t>(n) * 2)
         return;
 
-    // Collect unique labels in sorted order so the palette mapping is
-    // deterministic across runs.
     std::vector<int> uniq(labels.begin(), labels.end());
     std::sort(uniq.begin(), uniq.end());
     uniq.erase(std::unique(uniq.begin(), uniq.end()), uniq.end());
+
+    const auto& palette = d->view->theme().seriesColors;
 
     for (int lbl : uniq) {
         std::vector<float> xs, ys;
@@ -95,10 +99,22 @@ void Figure::scatterLabeled(std::span<const float> xy, int n,
             static_cast<Eigen::Index>(xs.size()));
         Eigen::Map<const Eigen::VectorXf> yv(ys.data(),
             static_cast<Eigen::Index>(ys.size()));
-        d->view->scatter(xv, yv, {
-            .pointSize = 7.0f,
-            .label = QStringLiteral("%1").arg(lbl),
-        });
+
+        PlotStyle style;
+        style.pointSize = inStyle.pointSize;
+        style.hollow    = inStyle.hollow;
+        style.label     = QStringLiteral("%1").arg(lbl);
+
+        auto it = d->labelColorSlot.find(lbl);
+        if (it != d->labelColorSlot.end()) {
+            // Reuse the palette color assigned to this label on the first call.
+            style.color = palette[it->second % palette.size()];
+        } else {
+            d->labelColorSlot[lbl] = d->nextColorSlot++;
+            // No explicit color — PlotView assigns the next palette slot.
+        }
+
+        d->view->scatter(xv, yv, style);
     }
 }
 

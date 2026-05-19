@@ -75,6 +75,7 @@ struct Series2D {
     int vertexCount = 0;
     Eigen::Vector4f color;
     float pointSize = 5.0f;
+    bool hollow = false;
     bool dirty = true;
 
     QRhiBuffer* vb = nullptr;
@@ -527,6 +528,7 @@ void PlotView::addSeriesImpl(int kindInt,
         resolvedColor.w() = style.opacity;
     series.color = resolvedColor;
     series.pointSize = style.pointSize;
+    series.hollow = style.hollow;
     series.dirty = true;
 
     if (d->pipelineReady) {
@@ -1778,7 +1780,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         u->updateDynamicBuffer(s.ub, 0, 64, mvp.data());
         u->updateDynamicBuffer(s.ub, 64, 16, s.color.data());
         if (s.kind == SeriesKind::Scatter) {
-            Eigen::Vector4f params(s.pointSize, 0.f, 0.f, 0.f);
+            Eigen::Vector4f params(s.pointSize, s.hollow ? 1.f : 0.f, 0.f, 0.f);
             u->updateDynamicBuffer(s.ub, 80, 16, params.data());
         }
     }

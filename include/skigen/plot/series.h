@@ -14,6 +14,7 @@ struct SKIGENPLOT_EXPORT PlotStyle {
     float lineWidth = 1.5f;
     float pointSize = 5.0f;
     float opacity = 1.0f;
+    bool hollow = false;
     QString label;
 };
 
