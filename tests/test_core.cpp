@@ -231,7 +231,7 @@ void test_camera3d_vp_product() {
     cam.setPerspective(60.f, 1.5f, 0.1f, 50.f);
 
     auto VP = cam.viewProjectionMatrix();
-    auto VP_manual = cam.projectionMatrix() * cam.viewMatrix();
+    Eigen::Matrix4f VP_manual = cam.projectionMatrix() * cam.viewMatrix();
 
     for (int i = 0; i < 16; ++i)
         ASSERT_NEAR(VP.data()[i], VP_manual.data()[i], 1e-5f);

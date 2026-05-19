@@ -1,0 +1,158 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The Skigen Contributors
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# Main Branch Pipeline
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Triggered on pushes to `main` and version tags.
+#
+# Branch model:  Feature → Staging → Main
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+concurrency:
+  group: main-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Linux (GCC ${{ matrix.gcc }})
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        gcc: [13, 14]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkout Eigen
+        uses: actions/checkout@v5
+        with:
+          repository: skigen-project/eigen
+          ref: '3.4'
+          path: eigen
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtshadertools'
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_CXX_COMPILER=g++-${{ matrix.gcc }} \
+            -DSKIGENPLOT_BUILD_TESTS=ON \
+            -DSKIGENPLOT_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  build-macos:
+    name: macOS (AppleClang)
+    if: github.ref_type != 'tag'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkout Eigen
+        uses: actions/checkout@v5
+        with:
+          repository: skigen-project/eigen
+          ref: '3.4'
+          path: eigen
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtshadertools'
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DSKIGENPLOT_BUILD_TESTS=ON \
+            -DSKIGENPLOT_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.logicalcpu)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  build-windows:
+    name: Windows (MSVC)
+    if: github.ref_type != 'tag'
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkout Eigen
+        uses: actions/checkout@v5
+        with:
+          repository: skigen-project/eigen
+          ref: '3.4'
+          path: eigen
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtshadertools'
+
+      - name: Configure
+        run: |
+          cmake -B build `
+            -DSKIGENPLOT_BUILD_TESTS=ON `
+            -DSKIGENPLOT_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  release:
+    name: Create Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package headers
+        run: |
+          mkdir -p staging/include
+          cp -r include/skigen staging/include/
+          cp -r cmake staging/
+          cp LICENSE staging/
+          cp README.md staging/
+          tar czf skigen-plot-${{ steps.version.outputs.VERSION }}.tar.gz -C staging .
+          sha256sum skigen-plot-${{ steps.version.outputs.VERSION }}.tar.gz \
+            > skigen-plot-${{ steps.version.outputs.VERSION }}.tar.gz.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            skigen-plot-${{ steps.version.outputs.VERSION }}.tar.gz
+            skigen-plot-${{ steps.version.outputs.VERSION }}.tar.gz.sha256
+          generate_release_notes: true

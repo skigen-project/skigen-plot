@@ -8,6 +8,8 @@
 #include <expected>
 #include <vector>
 
+using namespace Qt::StringLiterals;
+
 namespace Skigen::Plot {
 
 // ── Shader loading ───────────────────────────────────────────────────────
@@ -17,10 +19,10 @@ static auto loadShader(const QString& path)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
-        return std::unexpected(u"Failed to open shader: "_qs + path);
+        return std::unexpected(u"Failed to open shader: "_s + path);
     auto shader = QShader::fromSerialized(f.readAll());
     if (!shader.isValid())
-        return std::unexpected(u"Invalid shader: "_qs + path);
+        return std::unexpected(u"Invalid shader: "_s + path);
     return shader;
 }
 
@@ -144,8 +146,8 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->srb->create();
 
     // Load compiled shaders from Qt resources
-    auto vs = loadShader(u":/skigen/plot/line2d.vert.qsb"_qs);
-    auto fs = loadShader(u":/skigen/plot/line2d.frag.qsb"_qs);
+    auto vs = loadShader(u":/skigen/plot/line2d.vert.qsb"_s);
+    auto fs = loadShader(u":/skigen/plot/line2d.frag.qsb"_s);
     if (!vs || !fs) {
         qWarning("SkigenPlot: shader loading failed");
         return;

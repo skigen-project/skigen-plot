@@ -39,6 +39,7 @@ endif()
 # Qt 6 dependencies
 # ---------------------------------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets ShaderTools)
+find_package(Qt6 QUIET COMPONENTS GuiPrivate)
 
 # ---------------------------------------------------------------------------
 # Library target
@@ -121,49 +122,63 @@ install(DIRECTORY include/skigen
     COMPONENT Devel
 )
 
-install(TARGETS SkigenPlot EXPORT SkigenPlotTargets
-    LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+# CMake package export — only when dependencies are exportable
+# (source-tree Eigen3_source and qt_add_shaders resource targets are not)
+if(Eigen3_FOUND)
+    # Include the auto-generated shader resource target in the export set
+    install(TARGETS SkigenPlot SkigenPlot_resources_1
+        EXPORT SkigenPlotTargets
+        LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 
-set(CMAKEPACKAGE_INSTALL_DIR
-    "${CMAKE_INSTALL_DATADIR}/SkigenPlot/cmake"
-    CACHE PATH "CMake package config install directory")
+    set(CMAKEPACKAGE_INSTALL_DIR
+        "${CMAKE_INSTALL_DATADIR}/SkigenPlot/cmake"
+        CACHE PATH "CMake package config install directory")
 
-if(IS_ABSOLUTE "${CMAKEPACKAGE_INSTALL_DIR}")
-    file(RELATIVE_PATH CMAKEPACKAGE_INSTALL_DIR
-         "${CMAKE_INSTALL_PREFIX}" "${CMAKEPACKAGE_INSTALL_DIR}")
+    if(IS_ABSOLUTE "${CMAKEPACKAGE_INSTALL_DIR}")
+        file(RELATIVE_PATH CMAKEPACKAGE_INSTALL_DIR
+             "${CMAKE_INSTALL_PREFIX}" "${CMAKEPACKAGE_INSTALL_DIR}")
+    endif()
+
+    configure_package_config_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SkigenPlotConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotConfig.cmake"
+        INSTALL_DESTINATION ${CMAKEPACKAGE_INSTALL_DIR}
+    )
+
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+
+    install(EXPORT SkigenPlotTargets
+        FILE SkigenPlotTargets.cmake
+        NAMESPACE SkigenPlot::
+        DESTINATION ${CMAKEPACKAGE_INSTALL_DIR}
+    )
+
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotConfigVersion.cmake"
+        DESTINATION ${CMAKEPACKAGE_INSTALL_DIR}
+    )
+
+    export(EXPORT SkigenPlotTargets
+        FILE "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotTargets.cmake"
+        NAMESPACE SkigenPlot::
+    )
+else()
+    install(TARGETS SkigenPlot
+        LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+    message(STATUS "Eigen from source tree — CMake package export disabled. "
+                   "Install Eigen3 system-wide for find_package(SkigenPlot) support.")
 endif()
-
-configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SkigenPlotConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotConfig.cmake"
-    INSTALL_DESTINATION ${CMAKEPACKAGE_INSTALL_DIR}
-)
-
-write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotConfigVersion.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-
-install(EXPORT SkigenPlotTargets
-    FILE SkigenPlotTargets.cmake
-    NAMESPACE SkigenPlot::
-    DESTINATION ${CMAKEPACKAGE_INSTALL_DIR}
-)
-
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotConfigVersion.cmake"
-    DESTINATION ${CMAKEPACKAGE_INSTALL_DIR}
-)
-
-export(EXPORT SkigenPlotTargets
-    FILE "${CMAKE_CURRENT_BINARY_DIR}/SkigenPlotTargets.cmake"
-    NAMESPACE SkigenPlot::
-)
 
 message(STATUS "")
 message(STATUS "SkigenPlot v${PROJECT_VERSION}")

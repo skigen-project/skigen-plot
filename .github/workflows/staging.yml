@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The Skigen Contributors
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# Staging Branch Pipeline
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Triggered on pushes to `staging`.
+#
+# Branch model:  Feature → Staging → Main
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+concurrency:
+  group: staging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Linux (GCC ${{ matrix.gcc }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        gcc: [13, 14]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkout Eigen
+        uses: actions/checkout@v5
+        with:
+          repository: skigen-project/eigen
+          ref: '3.4'
+          path: eigen
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtshadertools'
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_CXX_COMPILER=g++-${{ matrix.gcc }} \
+            -DSKIGENPLOT_BUILD_TESTS=ON \
+            -DSKIGENPLOT_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install (smoke test)
+        run: |
+          cmake --install build --prefix ${{ runner.temp }}/skigenplot-install
+          ls -la ${{ runner.temp }}/skigenplot-install/include/skigen/plot/
+
+  build-macos:
+    name: macOS (AppleClang)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkout Eigen
+        uses: actions/checkout@v5
+        with:
+          repository: skigen-project/eigen
+          ref: '3.4'
+          path: eigen
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtshadertools'
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DSKIGENPLOT_BUILD_TESTS=ON \
+            -DSKIGENPLOT_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.logicalcpu)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  build-windows:
+    name: Windows (MSVC)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkout Eigen
+        uses: actions/checkout@v5
+        with:
+          repository: skigen-project/eigen
+          ref: '3.4'
+          path: eigen
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtshadertools'
+
+      - name: Configure
+        run: |
+          cmake -B build `
+            -DSKIGENPLOT_BUILD_TESTS=ON `
+            -DSKIGENPLOT_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure

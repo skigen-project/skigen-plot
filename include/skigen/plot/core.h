@@ -3,6 +3,7 @@
 #include <skigen/plot/export.h>
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include <concepts>
 #include <limits>
