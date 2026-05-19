@@ -13,8 +13,16 @@
 
 class QRhiResourceUpdateBatch;
 class QRhiRenderTarget;
+class QPainter;
 
 namespace Skigen::Plot {
+
+enum class InteractionTool {
+    Select,
+    Pan,
+    Rotate,
+    Zoom
+};
 
 class SKIGENPLOT_EXPORT PlotView : public QRhiWidget {
     Q_OBJECT
@@ -81,6 +89,7 @@ public:
 
     void clear();
     void setTitle(const QString& title);
+    void setCaption(const QString& caption);
 
     // ── Appearance ──────────────────────────────────────────────────
 
@@ -96,6 +105,12 @@ public:
 
     void setGridVisible(bool visible);
     void setAxesVisible(bool visible);
+    void setAxisArrowsVisible(bool visible);
+    void setAxisLabels(const QString& xLabel, const QString& yLabel);
+    void setAxisLabels(const QString& xLabel, const QString& yLabel, const QString& zLabel);
+    void setXAxisLabel(const QString& label);
+    void setYAxisLabel(const QString& label);
+    void setZAxisLabel(const QString& label);
 
     // ── Camera (3D modes) ───────────────────────────────────────────
 
@@ -105,6 +120,12 @@ public:
     // ── Overlay ─────────────────────────────────────────────────────
 
     void setOverlayVisible(bool visible);
+    void setInteractionTool(InteractionTool tool);
+    auto interactionTool() const -> InteractionTool;
+    void resetCameraView();
+    void zoomCamera(float factor);
+    auto is3DView() const -> bool;
+    auto is2DView() const -> bool;
 
     // ── Export ───────────────────────────────────────────────────────
 
@@ -115,6 +136,9 @@ protected:
     void render(QRhiCommandBuffer* cb) override;
     void resizeEvent(QResizeEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private:
     void addLineSeries(std::span<const float> x, std::span<const float> y,
@@ -133,11 +157,14 @@ private:
     void computeGridVertices();
     void recomputeBounds();
     void layoutChildren();
+    void paintTextOverlay(QPainter& painter, const QSize& size) const;
 
     void renderToTarget(QRhiCommandBuffer* cb,
                         QRhiRenderTarget* rt,
                         QRhiResourceUpdateBatch* u,
                         const QSize& sz);
+
+    friend class PlotTextOverlay;
 
     struct Impl;
     std::unique_ptr<Impl> d;

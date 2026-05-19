@@ -11,9 +11,11 @@ layout(std140, binding = 0) uniform buf {
 };
 
 layout(location = 0) out vec3 v_normal;
+layout(location = 1) out vec3 v_position;
 
 void main()
 {
     v_normal = normal;
+    v_position = position;
     gl_Position = mvp * vec4(position, 1.0);
 }

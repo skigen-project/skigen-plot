@@ -28,3 +28,6 @@ skigenplot_add_example(ex_point_cloud     pointcloud/point_cloud.cpp)
 # 3D mesh examples
 # ---------------------------------------------------------------------------
 skigenplot_add_example(ex_mesh_view       mesh/mesh_view.cpp)
+
+# Render all gallery examples to PNG files for visual inspection
+skigenplot_add_example(ex_render_gallery  render_gallery.cpp)

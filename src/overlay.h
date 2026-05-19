@@ -8,6 +8,7 @@ class QPushButton;
 
 namespace Skigen::Plot {
 
+enum class InteractionTool;
 class PlotView;
 
 class PlotOverlay : public QWidget {
@@ -27,7 +28,15 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    void setTool(InteractionTool tool);
+    void restyleButtons();
+    void updateMode();
+
     PlotView* m_plotView;
+    QPushButton* m_rotateBtn;
+    QPushButton* m_panBtn;
+    QPushButton* m_zoomBtn;
+    QPushButton* m_resetBtn;
     QPushButton* m_themeBtn;
     QPushButton* m_saveBtn;
     QPropertyAnimation* m_fadeAnim;

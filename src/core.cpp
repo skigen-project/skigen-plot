@@ -190,34 +190,34 @@ auto computeVertexNormals(std::span<const float> vertices, int vertexCount,
 
 auto Theme::dark() -> Theme {
     Theme t;
-    t.background = {0.035f, 0.031f, 0.082f, 1.0f};
-    t.gridColor  = {0.12f, 0.12f, 0.22f, 0.25f};
-    t.axisColor  = {0.30f, 0.30f, 0.48f, 0.7f};
-    t.textColor  = {0.85f, 0.85f, 0.90f, 1.0f};
+    t.background = {0.047f, 0.039f, 0.102f, 1.0f};  // #0c0a1a
+    t.gridColor  = {0.424f, 0.361f, 0.620f, 0.18f};
+    t.axisColor  = {0.729f, 0.678f, 0.918f, 0.58f};
+    t.textColor  = {0.925f, 0.914f, 0.984f, 1.0f};
     t.seriesColors = {{
-        {0.024f, 0.714f, 0.831f, 1.0f},  // #06b6d4 cyan
-        {0.486f, 0.228f, 0.929f, 1.0f},  // #7c3aed violet
-        {0.659f, 0.333f, 0.969f, 1.0f},  // #a855f7 purple
-        {0.957f, 0.447f, 0.714f, 1.0f},  // #f472b6 pink
-        {0.204f, 0.827f, 0.600f, 1.0f},  // #34d399 emerald
-        {0.984f, 0.749f, 0.141f, 1.0f},  // #fbbf24 amber
+        {0.024f, 0.714f, 0.831f, 0.98f}, // #06b6d4 cyan
+        {0.549f, 0.361f, 0.965f, 0.98f}, // #8b5cf6 violet
+        {0.204f, 0.827f, 0.600f, 0.98f}, // #34d399 emerald
+        {0.937f, 0.341f, 0.196f, 0.98f}, // #ef5732 vermillion
+        {0.984f, 0.749f, 0.141f, 0.98f}, // #fbbf24 amber
+        {0.376f, 0.647f, 0.980f, 0.98f}, // #60a5fa blue
     }};
     return t;
 }
 
 auto Theme::light() -> Theme {
     Theme t;
-    t.background = {0.976f, 0.980f, 0.992f, 1.0f};
-    t.gridColor  = {0.85f, 0.87f, 0.92f, 0.35f};
-    t.axisColor  = {0.35f, 0.40f, 0.50f, 0.8f};
-    t.textColor  = {0.15f, 0.23f, 0.33f, 1.0f};
+    t.background = {0.984f, 0.988f, 0.996f, 1.0f};  // #fbfcfe
+    t.gridColor  = {0.506f, 0.569f, 0.682f, 0.22f};
+    t.axisColor  = {0.235f, 0.282f, 0.376f, 0.58f};
+    t.textColor  = {0.118f, 0.161f, 0.231f, 1.0f};
     t.seriesColors = {{
-        {0.016f, 0.565f, 0.659f, 1.0f},  // darker cyan
-        {0.376f, 0.176f, 0.718f, 1.0f},  // darker violet
-        {0.498f, 0.208f, 0.776f, 1.0f},  // darker purple
-        {0.839f, 0.267f, 0.553f, 1.0f},  // darker pink
-        {0.122f, 0.639f, 0.459f, 1.0f},  // darker emerald
-        {0.816f, 0.584f, 0.047f, 1.0f},  // darker amber
+        {0.000f, 0.549f, 0.663f, 0.98f}, // #008ca9 deep cyan
+        {0.431f, 0.192f, 0.855f, 0.98f}, // #6e31da violet
+        {0.035f, 0.584f, 0.408f, 0.98f}, // #099568 emerald
+        {0.765f, 0.188f, 0.125f, 0.98f}, // #c33020 vermillion
+        {0.776f, 0.482f, 0.000f, 0.98f}, // #c67b00 amber
+        {0.145f, 0.388f, 0.922f, 0.98f}, // #2563eb blue
     }};
     return t;
 }
