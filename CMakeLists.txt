@@ -49,7 +49,9 @@ add_library(SkigenPlot
     src/plotview.cpp
     src/overlay.cpp
     src/overlay.h
+    src/figure.cpp
     include/skigen/plot/plotview.h
+    include/skigen/plot/figure.h
 )
 add_library(SkigenPlot::SkigenPlot ALIAS SkigenPlot)
 
