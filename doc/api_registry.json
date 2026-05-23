@@ -21,7 +21,7 @@
       "name": "PlotView",
       "module": "Plot",
       "documented": true,
-      "guide": "/docs/plot/guide/plotview",
+      "guide": "/docs/guide/plotview",
       "example": "examples/line/line_plot.cpp",
       "example_snippet": "example_line_plot",
       "sidebar_position": 1
@@ -30,7 +30,7 @@
       "name": "BoundingBox2D",
       "module": "PlotCore",
       "documented": true,
-      "guide": "/docs/plot/guide/core-math",
+      "guide": "/docs/guide/core-math",
       "example": null,
       "sidebar_position": 1
     },
@@ -38,7 +38,7 @@
       "name": "BoundingBox3D",
       "module": "PlotCore",
       "documented": true,
-      "guide": "/docs/plot/guide/core-math",
+      "guide": "/docs/guide/core-math",
       "example": null,
       "sidebar_position": 2
     },
@@ -46,7 +46,7 @@
       "name": "Camera3D",
       "module": "PlotCore",
       "documented": true,
-      "guide": "/docs/plot/guide/camera3d",
+      "guide": "/docs/guide/camera3d",
       "example": "examples/pointcloud/point_cloud.cpp",
       "example_snippet": "example_point_cloud",
       "sidebar_position": 3
