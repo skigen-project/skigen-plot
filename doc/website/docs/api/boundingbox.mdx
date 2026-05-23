@@ -1,0 +1,43 @@
+---
+sidebar_position: 3
+title: BoundingBox
+---
+
+# BoundingBox2D / BoundingBox3D
+
+Axis-aligned bounding boxes for automatic viewport scaling.
+
+## Synopsis
+
+```cpp
+namespace Skigen::Plot {
+
+struct BoundingBox2D {
+    float xMin, xMax, yMin, yMax;
+
+    auto width()  const -> float;
+    auto height() const -> float;
+    auto center() const -> Eigen::Vector2f;
+
+    void expand(float x, float y);
+    void merge(const BoundingBox2D& other);
+};
+
+struct BoundingBox3D {
+    float xMin, xMax, yMin, yMax, zMin, zMax;
+
+    auto width()  const -> float;
+    auto height() const -> float;
+    auto depth()  const -> float;
+    auto center() const -> Eigen::Vector3f;
+
+    void expand(float x, float y, float z);
+    void merge(const BoundingBox3D& other);
+};
+
+} // namespace Skigen::Plot
+```
+
+## Description
+
+Bounding boxes are computed automatically by `PlotView` when data is set via `plot()`, `scatter()`, or `pointCloud()`. They drive the auto-scaling of axes and the viewport transform.

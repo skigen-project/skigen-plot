@@ -3,3 +3,11 @@ cmake-build-*/
 .cache/
 *.user
 compile_commands.json
+
+# Doxygen output
+doc/doxygen_output/
+
+# Node (Docusaurus)
+doc/website/node_modules/
+doc/website/build/
+doc/website/.docusaurus/

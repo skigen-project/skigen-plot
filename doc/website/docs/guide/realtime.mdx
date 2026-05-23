@@ -1,0 +1,57 @@
+---
+sidebar_position: 6
+title: Real-Time Data
+---
+
+# Real-Time Data Streaming
+
+SkigenPlot is designed for live data visualization — EEG telemetry, sensor streams, simulation output. The dynamic vertex buffer architecture supports per-frame data updates at 60 Hz+.
+
+## Pattern
+
+Call `plot()` or `scatter()` each time new data arrives. The widget automatically:
+1. Re-interleaves x/y into the GPU vertex buffer
+2. Recomputes the bounding box for auto-scaling
+3. Uploads and renders in the next frame
+
+```cpp
+// Timer-driven update
+QTimer timer;
+QObject::connect(&timer, &QTimer::timeout, [&]() {
+    // Shift window and append new sample
+    x = x.tail(n - 1).eval();
+    y = y.tail(n - 1).eval();
+    x.conservativeResize(n);
+    y.conservativeResize(n);
+    x(n - 1) = currentTime();
+    y(n - 1) = readSensor();
+
+    view.plot(x, y);
+});
+timer.start(16);  // ~60 Hz
+```
+
+## Buffer Management
+
+Dynamic vertex buffers grow automatically:
+
+| Initial capacity | Growth strategy | Behaviour |
+|-------------------|-----------------|-----------|
+| 128 K floats (64 K vertices) | 2× when exceeded | No pipeline recreation needed |
+
+For fixed-size scrolling windows, the buffer never grows — only contents are updated.
+
+## Performance Considerations
+
+- **Zero-copy path**: When the source is a contiguous `Eigen::VectorXf`, the template evaluates to a direct `memcpy` into the interleave buffer.
+- **Expression evaluation**: Non-contiguous expressions (blocks, casts) are evaluated once into a temporary before upload.
+- **GPU upload**: Uses `QRhiBuffer::Dynamic` with `updateDynamicBuffer()` — CPU-visible memory, no staging copies.
+
+## Use Cases
+
+| Application | Update rate | Data size |
+|-------------|-------------|-----------|
+| EEG telemetry (mne-cpp) | 60 Hz | 1–10 K samples/channel |
+| Sensor dashboard | 30 Hz | 100–1 K samples |
+| Simulation live view | 60 Hz | 10 K–1 M points |
+| Training loss curve | 1–10 Hz | 100–10 K epochs |

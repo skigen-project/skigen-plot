@@ -124,3 +124,45 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  deploy-dev-website:
+    name: Deploy Dev Website
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: doc/website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: doc/website
+        run: npm ci
+
+      - name: Build (dev)
+        working-directory: doc/website
+        env:
+          SKIGENPLOT_SITE_ENV: dev
+          DOCUSAURUS_BASE_URL: /skigen-plot/dev/
+        run: npm run build
+
+      - name: Deploy to skigen-project.github.io/skigen-plot/dev/
+        env:
+          SKIGEN_PROJECT_PAT: ${{ secrets.SKIGEN_PROJECT_PAT }}
+        run: |
+          git config --global user.email "deploy@skigen-project.github.io"
+          git config --global user.name "skigen-deploy"
+          git clone -b main --single-branch "https://${SKIGEN_PROJECT_PAT}@github.com/skigen-project/skigen-project.github.io.git"
+          cd skigen-project.github.io
+
+          rm -rf skigen-plot/dev
+          mkdir -p skigen-plot/dev
+          cp -r ../doc/website/build/. skigen-plot/dev/
+          touch .nojekyll
+
+          git add .
+          git commit -m "Deploy skigen-plot dev website from staging@${GITHUB_SHA::8}" --allow-empty
+          git push origin main

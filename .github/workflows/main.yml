@@ -125,6 +125,59 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
+  deploy-website:
+    name: Deploy Website
+    if: github.ref_type != 'tag'
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: doc/website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: doc/website
+        run: npm ci
+
+      - name: Build (production)
+        working-directory: doc/website
+        env:
+          SKIGENPLOT_SITE_ENV: stable
+        run: npm run build
+
+      - name: Deploy to skigen-project.github.io/skigen-plot/
+        env:
+          SKIGEN_PROJECT_PAT: ${{ secrets.SKIGEN_PROJECT_PAT }}
+        run: |
+          git config --global user.email "deploy@skigen-project.github.io"
+          git config --global user.name "skigen-deploy"
+          git clone -b main --single-branch "https://${SKIGEN_PROJECT_PAT}@github.com/skigen-project/skigen-project.github.io.git"
+          cd skigen-project.github.io
+
+          # Preserve /skigen-plot/dev directory (staging website)
+          if [ -d "skigen-plot/dev" ]; then
+            cp -r skigen-plot/dev /tmp/skigenplot-dev-backup
+          fi
+
+          rm -rf skigen-plot
+          mkdir -p skigen-plot
+          cp -r ../doc/website/build/. skigen-plot/
+
+          # Restore /skigen-plot/dev directory
+          if [ -d "/tmp/skigenplot-dev-backup" ]; then
+            cp -r /tmp/skigenplot-dev-backup skigen-plot/dev
+          fi
+
+          touch .nojekyll
+
+          git add .
+          git commit -m "Deploy skigen-plot website from main@${GITHUB_SHA::8}" --allow-empty
+          git push origin main
+
   release:
     name: Create Release
     if: startsWith(github.ref, 'refs/tags/v')

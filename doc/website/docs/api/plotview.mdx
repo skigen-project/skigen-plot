@@ -1,0 +1,51 @@
+---
+sidebar_position: 1
+title: PlotView
+---
+
+# PlotView
+
+The main widget for 2D and 3D plotting. Inherits from `QRhiWidget` and provides hardware-accelerated rendering via Vulkan, Metal, or Direct3D 12.
+
+## Synopsis
+
+```cpp
+namespace Skigen::Plot {
+
+class PlotView : public QRhiWidget {
+public:
+    PlotView(QWidget* parent = nullptr);
+
+    // 2D line plot
+    template <typename DerivedX, typename DerivedY>
+    void plot(const Eigen::MatrixBase<DerivedX>& x,
+              const Eigen::MatrixBase<DerivedY>& y);
+
+    // 2D scatter plot
+    template <typename DerivedX, typename DerivedY>
+    void scatter(const Eigen::MatrixBase<DerivedX>& x,
+                 const Eigen::MatrixBase<DerivedY>& y);
+
+    // 3D point cloud
+    template <typename Derived>
+    void pointCloud(const Eigen::MatrixBase<Derived>& vertices);
+
+    // Appearance
+    void setLineColor(const Eigen::Vector4f& rgba);
+    void setBackgroundColor(const Eigen::Vector4f& rgba);
+
+    // 3D camera
+    void setCamera(const Camera3D& camera);
+
+    // Export
+    void saveImage(const QString& path);
+};
+
+} // namespace Skigen::Plot
+```
+
+## Description
+
+`PlotView` is the central class of SkigenPlot. It accepts Eigen matrix expressions directly — no manual data conversion needed. Data is interleaved into GPU vertex buffers and rendered using Qt's RHI abstraction layer.
+
+See the [Line Plot](../guide/line-plot) and [Scatter Plot](../guide/scatter-plot) guides for usage examples.
