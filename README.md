@@ -5,6 +5,8 @@
 [![Release](https://github.com/skigen-project/skigen-plot/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/skigen-project/skigen-plot/actions/workflows/main.yml)
 [![Staging](https://github.com/skigen-project/skigen-plot/actions/workflows/staging.yml/badge.svg?branch=staging)](https://github.com/skigen-project/skigen-plot/actions/workflows/staging.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://skigen-project.github.io/skigen-plot/)
+[![Docs Dev](https://img.shields.io/badge/docs-dev-orange.svg)](https://skigen-project.github.io/skigen-plot/dev/)
 
 ## Overview
 
@@ -107,10 +109,6 @@ tests/            Headless math tests
 examples/         Line, scatter, point cloud, and mesh examples
 doc/              API registry, guide pages
 ```
-
-## Documentation
-
-Integrated into the [Skigen Project website](https://skigen-project.github.io) under the **Plot** navigation entry.
 
 ## License
 
