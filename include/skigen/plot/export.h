@@ -1,6 +1,8 @@
 #pragma once
 
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(SKIGENPLOT_STATIC)
+    #define SKIGENPLOT_EXPORT
+#elif defined(_WIN32) || defined(__CYGWIN__)
     #if defined(SKIGENPLOT_BUILDING_LIBRARY)
         #define SKIGENPLOT_EXPORT __declspec(dllexport)
     #else

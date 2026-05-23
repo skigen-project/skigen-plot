@@ -75,6 +75,12 @@ target_compile_features(SkigenPlot PUBLIC cxx_std_23)
 
 target_compile_definitions(SkigenPlot PRIVATE SKIGENPLOT_BUILDING_LIBRARY)
 
+# For static builds, SKIGENPLOT_EXPORT must be empty (no dllimport/dllexport)
+get_target_property(_skigenplot_type SkigenPlot TYPE)
+if(_skigenplot_type STREQUAL "STATIC_LIBRARY")
+    target_compile_definitions(SkigenPlot PUBLIC SKIGENPLOT_STATIC)
+endif()
+
 # ---------------------------------------------------------------------------
 # Shader compilation (GLSL → .qsb via Qt Shader Tools)
 # ---------------------------------------------------------------------------
