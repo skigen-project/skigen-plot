@@ -938,17 +938,30 @@ void PlotView::computeGridVertices() {
             d->axisVertices.push_back(bx); d->axisVertices.push_back(by);
         };
 
+        // Solid (filled) arrowheads: the grid/axis pipeline draws line
+        // segments only, so fill each triangular head with a fan of
+        // closely-spaced segments sweeping from the tip across the base.
+        constexpr int kArrowFanSteps = 14;
+        auto fillArrow2D = [&](float tipX, float tipY,
+                               float baseAX, float baseAY,
+                               float baseBX, float baseBY) {
+            for (int i = 0; i <= kArrowFanSteps; ++i) {
+                float s = static_cast<float>(i) / static_cast<float>(kArrowFanSteps);
+                float px = baseAX + (baseBX - baseAX) * s;
+                float py = baseAY + (baseBY - baseAY) * s;
+                appendLine2D(tipX, tipY, px, py);
+            }
+        };
+
         float xArrowHalfHeight = arrowY * 0.24f;
-        appendLine2D(xhi, ylo, xhi - arrowX, ylo + xArrowHalfHeight);
-        appendLine2D(xhi, ylo, xhi - arrowX, ylo - xArrowHalfHeight);
-        appendLine2D(xhi - arrowX, ylo - xArrowHalfHeight,
-                     xhi - arrowX, ylo + xArrowHalfHeight);
+        fillArrow2D(xhi, ylo,
+                    xhi - arrowX, ylo - xArrowHalfHeight,
+                    xhi - arrowX, ylo + xArrowHalfHeight);
 
         float yArrowHalfWidth = arrowX * 0.24f;
-        appendLine2D(xlo, yhi, xlo - yArrowHalfWidth, yhi - arrowY);
-        appendLine2D(xlo, yhi, xlo + yArrowHalfWidth, yhi - arrowY);
-        appendLine2D(xlo - yArrowHalfWidth, yhi - arrowY,
-                     xlo + yArrowHalfWidth, yhi - arrowY);
+        fillArrow2D(xlo, yhi,
+                    xlo - yArrowHalfWidth, yhi - arrowY,
+                    xlo + yArrowHalfWidth, yhi - arrowY);
     }
 
     float txLen = (yhi - ylo) * 0.010f;

@@ -223,21 +223,22 @@ auto Theme::light() -> Theme {
 }
 
 auto Theme::matplotlib() -> Theme {
-    // Mirrors the default matplotlib look: white figure, light-gray solid
-    // gridlines, muted dark-gray spines/text, and the canonical `tab10`
-    // categorical palette (first six colours).
+    // Clean matplotlib-style layout — white figure, light-gray gridlines,
+    // muted dark-gray spines/text — paired with Skigen's own vivid
+    // cyan/violet/emerald categorical palette (more qualitative on white
+    // than the muted `tab10` defaults).
     Theme t;
     t.background = {1.000f, 1.000f, 1.000f, 1.0f};  // white #ffffff
     t.gridColor  = {0.690f, 0.690f, 0.690f, 0.42f}; // #b0b0b0 @ ~0.4 alpha
     t.axisColor  = {0.150f, 0.150f, 0.150f, 0.85f}; // #262626 spine gray
     t.textColor  = {0.150f, 0.150f, 0.150f, 1.0f};  // #262626 near-black
     t.seriesColors = {{
-        {0.122f, 0.467f, 0.706f, 1.0f}, // #1f77b4 tab:blue
-        {1.000f, 0.498f, 0.055f, 1.0f}, // #ff7f0e tab:orange
-        {0.173f, 0.627f, 0.173f, 1.0f}, // #2ca02c tab:green
-        {0.839f, 0.153f, 0.157f, 1.0f}, // #d62728 tab:red
-        {0.580f, 0.404f, 0.741f, 1.0f}, // #9467bd tab:purple
-        {0.549f, 0.337f, 0.294f, 1.0f}, // #8c564b tab:brown
+        {0.000f, 0.549f, 0.663f, 0.98f}, // #008ca9 deep cyan
+        {0.431f, 0.192f, 0.855f, 0.98f}, // #6e31da violet
+        {0.035f, 0.584f, 0.408f, 0.98f}, // #099568 emerald
+        {0.765f, 0.188f, 0.125f, 0.98f}, // #c33020 vermillion
+        {0.776f, 0.482f, 0.000f, 0.98f}, // #c67b00 amber
+        {0.145f, 0.388f, 0.922f, 0.98f}, // #2563eb blue
     }};
     return t;
 }
