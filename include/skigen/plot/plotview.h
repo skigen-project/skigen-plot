@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <span>
+#include <vector>
 
 class QRhiResourceUpdateBatch;
 class QRhiRenderTarget;
@@ -153,6 +154,29 @@ public:
                      {ef.data(), static_cast<std::size_t>(ef.size())}, style);
     }
 
+    // ── 2D stem plot (baseline-anchored impulses) ──────────────────
+
+    /// @brief Draw vertical stems from y=0 to each (@p x, @p y) with a marker
+    ///   at the top of each stem.
+    template <typename DerivedX, typename DerivedY>
+    void stem(const Eigen::MatrixBase<DerivedX>& x,
+              const Eigen::MatrixBase<DerivedY>& y,
+              const PlotStyle& style = {})
+    {
+        Eigen::VectorXf xf = x.derived().template cast<float>().eval();
+        Eigen::VectorXf yf = y.derived().template cast<float>().eval();
+        stemImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                 {yf.data(), static_cast<std::size_t>(yf.size())}, style);
+    }
+
+    // ── 2D box plot (one box per group) ─────────────────────────────
+
+    /// @brief Draw a box-and-whisker for each group in @p groups, placed at
+    ///   integer positions 0, 1, 2, … Box spans Q1–Q3, with the median line,
+    ///   1.5·IQR whiskers, and outliers as points.
+    void boxplot(const std::vector<Eigen::VectorXf>& groups,
+                 const PlotStyle& style = {});
+
     // ── 2D heatmap / image (colormapped R×C matrix) ─────────────────
 
     /// @brief Draw matrix @p m as a colormapped grid of cells (row 0 at the
@@ -271,6 +295,8 @@ private:
     void fillBetweenImpl(std::span<const float> x, std::span<const float> y0,
                          std::span<const float> y1, const PlotStyle& style);
     void stepImpl(std::span<const float> x, std::span<const float> y,
+                  const PlotStyle& style);
+    void stemImpl(std::span<const float> x, std::span<const float> y,
                   const PlotStyle& style);
     void errorbarImpl(std::span<const float> x, std::span<const float> y,
                       std::span<const float> yerr, const PlotStyle& style);

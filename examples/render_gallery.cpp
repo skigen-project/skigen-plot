@@ -135,6 +135,52 @@ auto errorbarStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     };
 }
 
+auto stemStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            constexpr float pi = std::numbers::pi_v<float>;
+            int n = 24;
+            Eigen::VectorXf x = Eigen::VectorXf::LinSpaced(n, 0.f, 2.f * pi);
+            Eigen::VectorXf y = (x.array() * 1.5f).sin() * (-x.array() * 0.25f).exp();
+
+            view.clear();
+            view.setTheme(theme);
+            view.setTitle(QStringLiteral("Stem Plot"));
+            view.setCaption(QStringLiteral("Damped oscillation — baseline-anchored impulses"));
+            view.setAxisLabels(QStringLiteral("n"), QStringLiteral("amplitude"));
+            view.stem(x, y);
+        }
+    };
+}
+
+auto boxplotStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            std::mt19937 rng(11);
+            std::vector<Eigen::VectorXf> groups;
+            for (int g = 0; g < 4; ++g) {
+                std::normal_distribution<float> dist(static_cast<float>(g) * 0.6f,
+                                                     0.5f + 0.15f * static_cast<float>(g));
+                int m = 80;
+                Eigen::VectorXf v(m);
+                for (int i = 0; i < m; ++i) v(i) = dist(rng);
+                // Inject a couple of outliers in the first group.
+                if (g == 0) { v(0) = 3.5f; v(1) = -3.0f; }
+                groups.push_back(v);
+            }
+
+            view.clear();
+            view.setTheme(theme);
+            view.setTitle(QStringLiteral("Box Plot"));
+            view.setCaption(QStringLiteral("Distribution comparison across 4 groups"));
+            view.setAxisLabels(QStringLiteral("group"), QStringLiteral("value"));
+            view.boxplot(groups);
+        }
+    };
+}
+
 auto heatmapStep(QString filename, Skigen::Plot::Theme theme,
                  Skigen::Plot::Colormap cmap = Skigen::Plot::Colormap::Viridis,
                  QString cmapName = QStringLiteral("viridis")) -> RenderStep {
@@ -257,6 +303,10 @@ int main(int argc, char* argv[]) {
         barStep(QStringLiteral("bar_dark.png"), Skigen::Plot::Theme::dark()),
         errorbarStep(QStringLiteral("errorbar_paper.png"), Skigen::Plot::Theme::paper()),
         errorbarStep(QStringLiteral("errorbar_dark.png"), Skigen::Plot::Theme::dark()),
+        stemStep(QStringLiteral("stem_paper.png"), Skigen::Plot::Theme::paper()),
+        stemStep(QStringLiteral("stem_dark.png"), Skigen::Plot::Theme::dark()),
+        boxplotStep(QStringLiteral("boxplot_paper.png"), Skigen::Plot::Theme::paper()),
+        boxplotStep(QStringLiteral("boxplot_dark.png"), Skigen::Plot::Theme::dark()),
         heatmapStep(QStringLiteral("heatmap_paper.png"), Skigen::Plot::Theme::paper()),
         heatmapStep(QStringLiteral("heatmap_dark.png"), Skigen::Plot::Theme::dark()),
         heatmapStep(QStringLiteral("heatmap_jet.png"), Skigen::Plot::Theme::paper(),

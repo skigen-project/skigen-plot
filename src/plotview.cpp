@@ -745,6 +745,115 @@ void PlotView::errorbarImpl(std::span<const float> x, std::span<const float> y,
     addFillSeries(verts, style);
 }
 
+void PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
+                        const PlotStyle& style) {
+    const int n = static_cast<int>(std::min(x.size(), y.size()));
+    if (n == 0) return;
+
+    float xlo = x[0], xhi = x[0];
+    for (int i = 0; i < n; ++i) { xlo = std::min(xlo, x[static_cast<std::size_t>(i)]);
+                                  xhi = std::max(xhi, x[static_cast<std::size_t>(i)]); }
+    const float stemHalf = std::max(xhi - xlo, 1e-6f) * 0.0015f;
+
+    // Thin vertical quads from the baseline (y=0) to each sample.
+    std::vector<float> verts;
+    verts.reserve(static_cast<std::size_t>(n) * 12);
+    std::vector<float> mx(static_cast<std::size_t>(n)), my(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        float xi = x[static_cast<std::size_t>(i)];
+        float yi = y[static_cast<std::size_t>(i)];
+        appendQuad(verts, xi - stemHalf, 0.0f, xi + stemHalf, yi);
+        mx[static_cast<std::size_t>(i)] = xi;
+        my[static_cast<std::size_t>(i)] = yi;
+    }
+    addFillSeries(verts, style);
+    // Markers at the stem tops (re-use the resolved series colour).
+    PlotStyle markerStyle = style;
+    markerStyle.pointSize = (style.pointSize > 0.0f) ? style.pointSize : 6.0f;
+    addSeriesImpl(static_cast<int>(SeriesKind::Scatter),
+                  {mx.data(), mx.size()}, {my.data(), my.size()}, markerStyle);
+}
+
+void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
+                       const PlotStyle& style) {
+    if (groups.empty()) return;
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
+
+    const float boxHalf = 0.3f;     // half box width in group-position units
+    const float capHalf = 0.15f;    // whisker-cap half width
+
+    // Percentile of a *sorted* sample via linear interpolation.
+    auto percentile = [](std::vector<float>& s, float p) -> float {
+        if (s.empty()) return 0.0f;
+        if (s.size() == 1) return s[0];
+        float idx = p * static_cast<float>(s.size() - 1);
+        auto i0 = static_cast<std::size_t>(idx);
+        float f = idx - static_cast<float>(i0);
+        if (i0 + 1 >= s.size()) return s.back();
+        return s[i0] * (1.0f - f) + s[i0 + 1] * f;
+    };
+
+    std::vector<float> boxVerts;     // filled box bodies + median/whisker lines
+    std::vector<float> outX, outY;   // outlier markers
+
+    // Line thickness expressed in x-units (positions are integers, span ~G).
+    const float lineHalf = std::max(static_cast<float>(groups.size()), 1.0f) * 0.004f;
+
+    for (std::size_t g = 0; g < groups.size(); ++g) {
+        std::vector<float> s(groups[g].data(), groups[g].data() + groups[g].size());
+        if (s.empty()) continue;
+        std::sort(s.begin(), s.end());
+
+        float q1 = percentile(s, 0.25f);
+        float med = percentile(s, 0.50f);
+        float q3 = percentile(s, 0.75f);
+        float iqr = q3 - q1;
+        float loFence = q1 - 1.5f * iqr;
+        float hiFence = q3 + 1.5f * iqr;
+
+        // Whisker ends = most extreme samples within the fences.
+        float whiskLo = q1, whiskHi = q3;
+        for (float v : s) {
+            if (v >= loFence && v < whiskLo) whiskLo = v;
+            if (v <= hiFence && v > whiskHi) whiskHi = v;
+            if (v < loFence || v > hiFence) {
+                outX.push_back(static_cast<float>(g));
+                outY.push_back(v);
+            }
+        }
+
+        float cx = static_cast<float>(g);
+        float x0 = cx - boxHalf, x1 = cx + boxHalf;
+
+        // Box body (translucent fill is applied via the series colour alpha).
+        appendQuad(boxVerts, x0, q1, x1, q3);
+        // Box outline (four thin quads) + median line.
+        appendQuad(boxVerts, x0, q1 - lineHalf, x1, q1 + lineHalf);          // bottom
+        appendQuad(boxVerts, x0, q3 - lineHalf, x1, q3 + lineHalf);          // top
+        appendQuad(boxVerts, x0 - lineHalf, q1, x0 + lineHalf, q3);          // left
+        appendQuad(boxVerts, x1 - lineHalf, q1, x1 + lineHalf, q3);          // right
+        appendQuad(boxVerts, x0, med - lineHalf, x1, med + lineHalf);        // median
+        // Whiskers (vertical stems + caps).
+        appendQuad(boxVerts, cx - lineHalf, whiskHi, cx + lineHalf, q3);     // upper stem
+        appendQuad(boxVerts, cx - lineHalf, q1, cx + lineHalf, whiskLo);     // lower stem
+        appendQuad(boxVerts, cx - capHalf, whiskHi - lineHalf, cx + capHalf, whiskHi + lineHalf);
+        appendQuad(boxVerts, cx - capHalf, whiskLo - lineHalf, cx + capHalf, whiskLo + lineHalf);
+    }
+
+    PlotStyle boxStyle = style;
+    if (boxStyle.opacity >= 1.0f && !boxStyle.color)
+        boxStyle.opacity = 0.55f;  // translucent body so the median reads
+    addFillSeries(boxVerts, boxStyle);
+
+    if (!outX.empty()) {
+        PlotStyle outStyle = style;
+        outStyle.pointSize = 5.0f;
+        addSeriesImpl(static_cast<int>(SeriesKind::Scatter),
+                      {outX.data(), outX.size()}, {outY.data(), outY.size()}, outStyle);
+    }
+}
+
 void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
                           Colormap cmap, float vmin, float vmax) {
     if (rows <= 0 || cols <= 0) return;
