@@ -149,11 +149,15 @@ int main(int argc, char* argv[]) {
     QDir().mkpath(outDir);
 
     std::vector<RenderStep> steps = {
+        lineStep(QStringLiteral("line_mpl.png"), Skigen::Plot::Theme::matplotlib()),
         lineStep(QStringLiteral("line_dark.png"), Skigen::Plot::Theme::dark()),
         lineStep(QStringLiteral("line_light.png"), Skigen::Plot::Theme::light()),
+        scatterStep(QStringLiteral("scatter_mpl.png"), Skigen::Plot::Theme::matplotlib()),
         scatterStep(QStringLiteral("scatter_dark.png"), Skigen::Plot::Theme::dark()),
         scatterStep(QStringLiteral("scatter_light.png"), Skigen::Plot::Theme::light()),
+        pointCloudStep(QStringLiteral("point_cloud_mpl.png"), Skigen::Plot::Theme::matplotlib()),
         pointCloudStep(QStringLiteral("point_cloud_dark.png"), Skigen::Plot::Theme::dark()),
+        meshStep(QStringLiteral("mesh_mpl.png"), Skigen::Plot::Theme::matplotlib()),
         meshStep(QStringLiteral("mesh_dark.png"), Skigen::Plot::Theme::dark()),
     };
 

@@ -17,6 +17,12 @@ struct SKIGENPLOT_EXPORT Theme {
 
     static auto dark() -> Theme;
     static auto light() -> Theme;
+
+    /// @brief Matplotlib-style light theme: white background, light-gray
+    ///   solid gridlines, muted dark-gray axes/text, and the canonical
+    ///   matplotlib `tab10` categorical series palette. Produces figures
+    ///   that match the look of `matplotlib.pyplot` defaults.
+    static auto matplotlib() -> Theme;
 };
 
 } // namespace Skigen::Plot

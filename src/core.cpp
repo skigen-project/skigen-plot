@@ -222,4 +222,24 @@ auto Theme::light() -> Theme {
     return t;
 }
 
+auto Theme::matplotlib() -> Theme {
+    // Mirrors the default matplotlib look: white figure, light-gray solid
+    // gridlines, muted dark-gray spines/text, and the canonical `tab10`
+    // categorical palette (first six colours).
+    Theme t;
+    t.background = {1.000f, 1.000f, 1.000f, 1.0f};  // white #ffffff
+    t.gridColor  = {0.690f, 0.690f, 0.690f, 0.55f}; // #b0b0b0 light gray
+    t.axisColor  = {0.200f, 0.200f, 0.200f, 0.90f}; // #333333 spine gray
+    t.textColor  = {0.150f, 0.150f, 0.150f, 1.0f};  // #262626 near-black
+    t.seriesColors = {{
+        {0.122f, 0.467f, 0.706f, 1.0f}, // #1f77b4 tab:blue
+        {1.000f, 0.498f, 0.055f, 1.0f}, // #ff7f0e tab:orange
+        {0.173f, 0.627f, 0.173f, 1.0f}, // #2ca02c tab:green
+        {0.839f, 0.153f, 0.157f, 1.0f}, // #d62728 tab:red
+        {0.580f, 0.404f, 0.741f, 1.0f}, // #9467bd tab:purple
+        {0.549f, 0.337f, 0.294f, 1.0f}, // #8c564b tab:brown
+    }};
+    return t;
+}
+
 } // namespace Skigen::Plot

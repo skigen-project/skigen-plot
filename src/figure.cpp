@@ -149,7 +149,8 @@ auto Figure::saveThemed(const QString& stem, int width, int height) -> bool {
     const Theme original = d->view->theme();
 
     struct Variant { const char* suffix; Theme theme; };
-    const std::array<Variant, 2> variants = {{
+    const std::array<Variant, 3> variants = {{
+        {"_mpl.png",   Theme::matplotlib()},
         {"_dark.png",  Theme::dark()},
         {"_light.png", Theme::light()},
     }};
