@@ -109,6 +109,13 @@ struct PlotView::Impl {
     bool hasHeatmap = false;
     bool heatmapDirty = false;
 
+    // Colorbar legend state (set by imshow / contourf).
+    bool showColorbar = false;
+    bool hasColormappedData = false;
+    Colormap colorbarMap = Colormap::Viridis;
+    float colorbarVmin = 0.0f;
+    float colorbarVmax = 1.0f;
+
     // Contour lines — vec2 line segments drawn with the grid pipeline,
     // uniform colour via contourUniformBuffer.
     std::unique_ptr<QRhiBuffer> contourBuffer;
@@ -912,6 +919,10 @@ void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
     d->heatmapVertexCount = static_cast<int>(verts.size() / 6);
     d->hasHeatmap = true;
     d->heatmapDirty = true;
+    d->hasColormappedData = true;
+    d->colorbarMap = cmap;
+    d->colorbarVmin = vmin;
+    d->colorbarVmax = vmax;
 
     // Bounds: the full cell grid.
     d->bounds2d = BoundingBox2D();
@@ -972,6 +983,10 @@ void PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
     d->heatmapVertexCount = static_cast<int>(verts.size() / 6);
     d->hasHeatmap = true;
     d->heatmapDirty = true;
+    d->hasColormappedData = true;
+    d->colorbarMap = cmap;
+    d->colorbarVmin = vmin;
+    d->colorbarVmax = vmax;
 
     d->bounds2d = BoundingBox2D();
     BoundingBox2D bb;
@@ -1192,6 +1207,7 @@ void PlotView::clear() {
     d->heatmapVertices.clear();
     d->heatmapVertexCount = 0;
     d->heatmapBuffer.reset();
+    d->hasColormappedData = false;
     d->hasContour = false;
     d->contourVertices.clear();
     d->contourVertexCount = 0;
@@ -1279,6 +1295,12 @@ void PlotView::setAxesVisible(bool visible) {
 void PlotView::setAxisArrowsVisible(bool visible) {
     d->showAxisArrows = visible;
     d->gridDirty = true;
+    update();
+}
+
+void PlotView::setColorbarVisible(bool visible) {
+    d->showColorbar = visible;
+    if (d->textOverlay) d->textOverlay->update();
     update();
 }
 
@@ -1578,11 +1600,12 @@ static auto plotAreaFor(const QSize& size,
                         bool hasTitle,
                         bool hasCaption,
                         bool hasXAxisLabel,
-                        bool hasYAxisLabel) -> QRectF
+                        bool hasYAxisLabel,
+                        bool hasColorbar = false) -> QRectF
 {
     double left = hasYAxisLabel ? 68.0 : 46.0;
     double top = hasTitle ? (hasCaption ? 58.0 : 38.0) : (hasCaption ? 38.0 : 18.0);
-    double right = 24.0;
+    double right = hasColorbar ? 80.0 : 24.0;
     double bottom = hasXAxisLabel ? 50.0 : 34.0;
     return QRectF(left,
                   top,
@@ -1655,7 +1678,8 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                                       !d->title.isEmpty(),
                                       !d->caption.isEmpty(),
                                       !d->xAxisLabel.isEmpty(),
-                                      !d->yAxisLabel.isEmpty());
+                                      !d->yAxisLabel.isEmpty(),
+                                      d->showColorbar && d->hasColormappedData);
 
         QFont tickFont = painter.font();
         tickFont.setPointSize(9);
@@ -1708,6 +1732,45 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
             QRectF rect(-plotArea.height() * 0.5, -8.0, plotArea.height(), 16.0);
             painter.drawText(rect, Qt::AlignHCenter | Qt::AlignVCenter, d->yAxisLabel);
             painter.restore();
+        }
+
+        // ── Colorbar legend (imshow / contourf) ────────────────────
+        if (d->showColorbar && d->hasColormappedData) {
+            const double barW = 14.0;
+            const double barX = plotArea.right() + 18.0;
+            const double barTop = plotArea.top();
+            const double barH = plotArea.height();
+
+            // Colormapped gradient strip (top = vmax, bottom = vmin).
+            const int steps = 128;
+            for (int i = 0; i < steps; ++i) {
+                float t = 1.0f - (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
+                Eigen::Vector4f col = sampleColormap(d->colorbarMap, t);
+                double y = barTop + barH * static_cast<double>(i) / steps;
+                double h = barH / steps + 1.0;
+                painter.fillRect(QRectF(barX, y, barW, h),
+                                 colorFromVec(col));
+            }
+            // Strip border.
+            painter.setPen(QPen(mutedColor, 1.0));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(QRectF(barX, barTop, barW, barH));
+
+            // Min / mid / max tick labels.
+            QFont cbFont = painter.font();
+            cbFont.setPointSize(8);
+            cbFont.setWeight(QFont::Normal);
+            painter.setFont(cbFont);
+            painter.setPen(mutedColor);
+            const double lx = barX + barW + 4.0;
+            auto cbLabel = [&](double frac, float value) {
+                double y = barTop + barH * (1.0 - frac);
+                painter.drawText(QRectF(lx, y - 8.0, 44.0, 16.0),
+                                 Qt::AlignLeft | Qt::AlignVCenter, tickLabel(value));
+            };
+            cbLabel(0.0, d->colorbarVmin);
+            cbLabel(0.5, 0.5f * (d->colorbarVmin + d->colorbarVmax));
+            cbLabel(1.0, d->colorbarVmax);
         }
     }
 
@@ -1930,7 +1993,8 @@ void PlotView::mouseMoveEvent(QMouseEvent* event) {
                                           !d->title.isEmpty(),
                                           !d->caption.isEmpty(),
                                           !d->xAxisLabel.isEmpty(),
-                                          !d->yAxisLabel.isEmpty());
+                                          !d->yAxisLabel.isEmpty(),
+                                          d->showColorbar && d->hasColormappedData);
             float dx = -static_cast<float>(delta.x())
                 / static_cast<float>(std::max(1.0, plotArea.width())) * d->viewBounds.width();
             float dy = static_cast<float>(delta.y())
@@ -2507,7 +2571,8 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                                       !d->title.isEmpty(),
                                       !d->caption.isEmpty(),
                                       !d->xAxisLabel.isEmpty(),
-                                      !d->yAxisLabel.isEmpty());
+                                      !d->yAxisLabel.isEmpty(),
+                                      d->showColorbar && d->hasColormappedData);
         cb->setViewport({static_cast<float>(plotArea.x()),
                          static_cast<float>(plotArea.y()),
                          static_cast<float>(plotArea.width()),

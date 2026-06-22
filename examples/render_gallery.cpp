@@ -205,6 +205,7 @@ auto contourStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
             view.setTheme(theme);
             view.setGridVisible(false);
             view.setAxisArrowsVisible(false);
+            view.setColorbarVisible(true);
             view.setTitle(QStringLiteral("Contour (filled + lines)"));
             view.setCaption(QStringLiteral("Decision-surface-style field, coolwarm fill + iso-lines"));
             view.setAxisLabels(QStringLiteral("x"), QStringLiteral("y"));
@@ -235,6 +236,7 @@ auto heatmapStep(QString filename, Skigen::Plot::Theme theme,
             view.setTheme(theme);
             view.setGridVisible(false);
             view.setAxisArrowsVisible(false);  // image plots use plain spines
+            view.setColorbarVisible(true);
             view.setTitle(QStringLiteral("Heatmap (imshow)"));
             view.setCaption(QStringLiteral("Gaussian field, %1 colormap").arg(cmapName));
             view.setAxisLabels(QStringLiteral("x"), QStringLiteral("y"));
@@ -369,12 +371,14 @@ int main(int argc, char* argv[]) {
         }
 
         const auto& step = steps[*index];
-        view.setGridVisible(true);  // default; a step may turn it off
-        step.setup(view);
+        view.setGridVisible(true);       // default; a step may turn it off
+        view.setColorbarVisible(false);  // default; colormapped steps enable it
         // The clean paper/matplotlib look uses plain spines (no arrowheads).
+        // Set before setup() so a step can still override (e.g. image plots).
         const bool plainSpines = step.filename.contains(QStringLiteral("_mpl"))
                                  || step.filename.contains(QStringLiteral("_paper"));
         view.setAxisArrowsVisible(!plainSpines);
+        step.setup(view);
         view.update();
 
         QTimer::singleShot(180, &view, [&, step]() {

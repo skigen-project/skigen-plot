@@ -271,6 +271,10 @@ public:
     void setGridVisible(bool visible);
     void setAxesVisible(bool visible);
     void setAxisArrowsVisible(bool visible);
+
+    /// @brief Show a vertical colorbar legend for colormapped data (imshow /
+    ///   contourf): a colormapped strip with min/mid/max tick labels.
+    void setColorbarVisible(bool visible);
     void setAxisLabels(const QString& xLabel, const QString& yLabel);
     void setAxisLabels(const QString& xLabel, const QString& yLabel, const QString& zLabel);
     void setXAxisLabel(const QString& label);
