@@ -177,6 +177,8 @@ int main(int argc, char* argv[]) {
 
         const auto& step = steps[*index];
         step.setup(view);
+        // The matplotlib look uses plain spines (no axis arrowheads).
+        view.setAxisArrowsVisible(!step.filename.contains(QStringLiteral("_mpl")));
         view.update();
 
         QTimer::singleShot(180, &view, [&, step]() {

@@ -158,11 +158,15 @@ auto Figure::saveThemed(const QString& stem, int width, int height) -> bool {
     bool all_ok = true;
     for (const auto& v : variants) {
         d->view->setTheme(v.theme);
+        // The matplotlib look uses plain spines (no axis arrowheads).
+        const bool mpl = QString::fromLatin1(v.suffix) == "_mpl.png";
+        d->view->setAxisArrowsVisible(!mpl);
         if (!save(stem + QString::fromLatin1(v.suffix), width, height))
             all_ok = false;
     }
 
     d->view->setTheme(original);
+    d->view->setAxisArrowsVisible(true);
     return all_ok;
 }
 
