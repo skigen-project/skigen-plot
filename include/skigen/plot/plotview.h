@@ -193,6 +193,33 @@ public:
                    cmap, vmin, vmax);
     }
 
+    // ── 2D contour lines / filled contour ───────────────────────────
+
+    /// @brief Draw iso-lines of scalar field @p z at @p levels evenly-spaced
+    ///   levels between the data min and max (marching squares). Cell (r, c)
+    ///   maps to grid coordinate (c, rows-1-r), matching imshow().
+    template <typename Derived>
+    void contour(const Eigen::MatrixBase<Derived>& z, int levels = 8,
+                 const PlotStyle& style = {})
+    {
+        Eigen::MatrixXf zf = z.derived().template cast<float>().eval();
+        contourImpl({zf.data(), static_cast<std::size_t>(zf.size())},
+                    static_cast<int>(zf.rows()), static_cast<int>(zf.cols()),
+                    levels, style);
+    }
+
+    /// @brief Filled contour: colour each cell by its value band using @p cmap
+    ///   (cell-level quantisation). Companion to contour().
+    template <typename Derived>
+    void contourf(const Eigen::MatrixBase<Derived>& z, int levels = 10,
+                  Colormap cmap = Colormap::Viridis)
+    {
+        Eigen::MatrixXf zf = z.derived().template cast<float>().eval();
+        contourfImpl({zf.data(), static_cast<std::size_t>(zf.size())},
+                     static_cast<int>(zf.rows()), static_cast<int>(zf.cols()),
+                     levels, cmap);
+    }
+
     // ── 3D point cloud (N×3 matrix) ─────────────────────────────────
 
     template <typename Derived>
@@ -302,6 +329,10 @@ private:
                       std::span<const float> yerr, const PlotStyle& style);
     void imshowImpl(std::span<const float> data, int rows, int cols,
                     Colormap cmap, float vmin, float vmax);
+    void contourImpl(std::span<const float> data, int rows, int cols,
+                     int levels, const PlotStyle& style);
+    void contourfImpl(std::span<const float> data, int rows, int cols,
+                      int levels, Colormap cmap);
 
     void setPointCloudData(std::span<const float> data, int vertexCount,
                            const PlotStyle& style);

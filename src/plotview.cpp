@@ -109,6 +109,18 @@ struct PlotView::Impl {
     bool hasHeatmap = false;
     bool heatmapDirty = false;
 
+    // Contour lines — vec2 line segments drawn with the grid pipeline,
+    // uniform colour via contourUniformBuffer.
+    std::unique_ptr<QRhiBuffer> contourBuffer;
+    std::unique_ptr<QRhiBuffer> contourUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> contourSrb;
+    std::vector<float> contourVertices;
+    Eigen::Vector4f contourColor{0.1f, 0.1f, 0.1f, 0.9f};
+    int contourVertexCount = 0;
+    int contourCapacity = 0;
+    bool hasContour = false;
+    bool contourDirty = false;
+
     // 3D pipelines
     std::unique_ptr<QRhiGraphicsPipeline> point3dPipeline;
     std::unique_ptr<QRhiGraphicsPipeline> meshPipeline;
@@ -209,7 +221,7 @@ struct PlotView::Impl {
     bool dragging = false;
     QPoint lastMousePos;
 
-    bool has2D() const { return !series2d.empty() || hasHeatmap; }
+    bool has2D() const { return !series2d.empty() || hasHeatmap || hasContour; }
     bool has3D() const { return mode3d != RenderMode3D::None; }
     bool hasData() const { return has2D() || has3D(); }
 };
@@ -919,6 +931,164 @@ void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
     update();
 }
 
+void PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
+                            int levels, Colormap cmap) {
+    if (rows <= 0 || cols <= 0) return;
+    levels = std::max(2, levels);
+
+    auto at = [&](int r, int c) -> float {
+        return data[static_cast<std::size_t>(c) * static_cast<std::size_t>(rows)
+                    + static_cast<std::size_t>(r)];
+    };
+    float vmin = at(0, 0), vmax = at(0, 0);
+    for (int c = 0; c < cols; ++c)
+        for (int r = 0; r < rows; ++r) {
+            float v = at(r, c); vmin = std::min(vmin, v); vmax = std::max(vmax, v);
+        }
+    const float range = std::max(vmax - vmin, 1e-12f);
+
+    auto& verts = d->heatmapVertices;
+    verts.clear();
+    verts.reserve(static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols) * 36);
+    auto push = [&](float x, float y, const Eigen::Vector4f& col) {
+        verts.insert(verts.end(), {x, y, col.x(), col.y(), col.z(), col.w()});
+    };
+    const auto fLevels = static_cast<float>(levels);
+    for (int r = 0; r < rows; ++r) {
+        float y0 = static_cast<float>(rows - 1 - r);
+        float y1 = static_cast<float>(rows - r);
+        for (int c = 0; c < cols; ++c) {
+            float tRaw = (at(r, c) - vmin) / range;
+            // Quantise to discrete bands (filled-contour look).
+            int band = std::min(levels - 1, static_cast<int>(tRaw * fLevels));
+            float t = (static_cast<float>(band) + 0.5f) / fLevels;
+            Eigen::Vector4f col = sampleColormap(cmap, t);
+            float x0 = static_cast<float>(c);
+            float x1 = static_cast<float>(c + 1);
+            push(x0, y0, col); push(x1, y0, col); push(x1, y1, col);
+            push(x0, y0, col); push(x1, y1, col); push(x0, y1, col);
+        }
+    }
+    d->heatmapVertexCount = static_cast<int>(verts.size() / 6);
+    d->hasHeatmap = true;
+    d->heatmapDirty = true;
+
+    d->bounds2d = BoundingBox2D();
+    BoundingBox2D bb;
+    bb.min = Eigen::Vector2f(0.0f, 0.0f);
+    bb.max = Eigen::Vector2f(static_cast<float>(cols), static_cast<float>(rows));
+    d->bounds2d = d->bounds2d.merge(bb);
+
+    if (d->pipelineReady) {
+        auto* r = rhi();
+        int floats = std::max(static_cast<int>(verts.size()), 1);
+        d->heatmapBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
+                                      quint32(floats * sizeof(float)));
+        d->heatmapCapacity = floats;
+    }
+    d->gridDirty = true;
+    update();
+}
+
+void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
+                           int levels, const PlotStyle& style) {
+    if (rows < 2 || cols < 2) return;
+    levels = std::max(1, levels);
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
+
+    auto at = [&](int r, int c) -> float {
+        return data[static_cast<std::size_t>(c) * static_cast<std::size_t>(rows)
+                    + static_cast<std::size_t>(r)];
+    };
+    float vmin = at(0, 0), vmax = at(0, 0);
+    for (int c = 0; c < cols; ++c)
+        for (int r = 0; r < rows; ++r) {
+            float v = at(r, c); vmin = std::min(vmin, v); vmax = std::max(vmax, v);
+        }
+    if (vmax <= vmin) return;
+
+    // Node position for grid index (r, c) — cell-centred to align with imshow.
+    auto nodeX = [&](int c) { return static_cast<float>(c) + 0.5f; };
+    auto nodeY = [&](int r) { return static_cast<float>(rows - 1 - r) + 0.5f; };
+
+    auto& verts = d->contourVertices;
+    verts.clear();
+    auto seg = [&](float xa, float ya, float xb, float yb) {
+        verts.insert(verts.end(), {xa, ya, xb, yb});
+    };
+    // Linear interpolation of the crossing point along an edge.
+    auto lerp = [](float a, float b, float iso, float pa, float pb) {
+        float d = (b - a);
+        float t = (std::abs(d) < 1e-12f) ? 0.5f : (iso - a) / d;
+        return pa + std::clamp(t, 0.0f, 1.0f) * (pb - pa);
+    };
+
+    for (int li = 1; li <= levels; ++li) {
+        float iso = vmin + (vmax - vmin) * static_cast<float>(li) / static_cast<float>(levels + 1);
+        // Marching squares over each 2x2 cell.
+        for (int r = 0; r < rows - 1; ++r) {
+            for (int c = 0; c < cols - 1; ++c) {
+                float tl = at(r, c),     tr = at(r, c + 1);
+                float bl = at(r + 1, c), br = at(r + 1, c + 1);
+                int code = (tl > iso ? 8 : 0) | (tr > iso ? 4 : 0) |
+                           (br > iso ? 2 : 0) | (bl > iso ? 1 : 0);
+                if (code == 0 || code == 15) continue;
+
+                float xL = nodeX(c), xR = nodeX(c + 1);
+                float yT = nodeY(r), yB = nodeY(r + 1);
+                // Edge crossing points (top, right, bottom, left).
+                float topX = lerp(tl, tr, iso, xL, xR), topY = yT;
+                float rightX = xR,                       rightY = lerp(tr, br, iso, yT, yB);
+                float botX = lerp(bl, br, iso, xL, xR), botY = yB;
+                float leftX = xL,                        leftY = lerp(tl, bl, iso, yT, yB);
+
+                switch (code) {
+                    case 1: case 14: seg(leftX, leftY, botX, botY); break;
+                    case 2: case 13: seg(botX, botY, rightX, rightY); break;
+                    case 3: case 12: seg(leftX, leftY, rightX, rightY); break;
+                    case 4: case 11: seg(topX, topY, rightX, rightY); break;
+                    case 6: case 9:  seg(topX, topY, botX, botY); break;
+                    case 7: case 8:  seg(leftX, leftY, topX, topY); break;
+                    case 5:  // saddle: two segments
+                        seg(leftX, leftY, topX, topY);
+                        seg(botX, botY, rightX, rightY);
+                        break;
+                    case 10: // saddle
+                        seg(leftX, leftY, botX, botY);
+                        seg(topX, topY, rightX, rightY);
+                        break;
+                    default: break;
+                }
+            }
+        }
+    }
+
+    d->contourVertexCount = static_cast<int>(verts.size() / 2);
+    d->hasContour = true;
+    d->contourDirty = true;
+    d->contourColor = style.color.value_or(
+        d->theme.seriesColors[static_cast<std::size_t>(d->nextColorIndex++)
+                              % d->theme.seriesColors.size()]);
+    if (style.opacity < 1.0f) d->contourColor.w() = style.opacity;
+
+    // Bounds cover the cell grid (so contour-only views still frame nicely).
+    BoundingBox2D bb;
+    bb.min = Eigen::Vector2f(0.0f, 0.0f);
+    bb.max = Eigen::Vector2f(static_cast<float>(cols), static_cast<float>(rows));
+    d->bounds2d = d->bounds2d.merge(bb);
+
+    if (d->pipelineReady) {
+        auto* r = rhi();
+        int floats = std::max(static_cast<int>(verts.size()), 1);
+        d->contourBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
+                                      quint32(floats * sizeof(float)));
+        d->contourCapacity = floats;
+    }
+    d->gridDirty = true;
+    update();
+}
+
 void PlotView::setPointCloudData(std::span<const float> data,
                                   int vertexCount,
                                   const PlotStyle& style) {
@@ -1022,6 +1192,10 @@ void PlotView::clear() {
     d->heatmapVertices.clear();
     d->heatmapVertexCount = 0;
     d->heatmapBuffer.reset();
+    d->hasContour = false;
+    d->contourVertices.clear();
+    d->contourVertexCount = 0;
+    d->contourBuffer.reset();
     d->meshEdgeVertices.clear();
     d->meshEdgeVertexCount = 0;
     d->guide3dVertices.clear();
@@ -1851,10 +2025,12 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->gridUniformBuffer    = makeUB(r, 80);
     d->axisUniformBuffer    = makeUB(r, 80);
     d->heatmapUniformBuffer = makeUB(r, 80);
+    d->contourUniformBuffer = makeUB(r, 80);
 
     // ── SRBs ───────────────────────────────────────────────────────
     d->point3dSrb = makeUniqueSrb(r, d->point3dUniformBuffer.get());
     d->heatmapSrb = makeUniqueSrb(r, d->heatmapUniformBuffer.get());
+    d->contourSrb = makeUniqueSrb(r, d->contourUniformBuffer.get());
     d->meshSrb    = makeUniqueSrb(r, d->meshUniformBuffer.get());
     d->meshEdgeSrb = makeUniqueSrb(r, d->meshEdgeUniformBuffer.get());
     d->guide3dSrb = makeUniqueSrb(r, d->guide3dUniformBuffer.get());
@@ -1878,6 +2054,13 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
                                       quint32(floats * sizeof(float)));
         d->heatmapCapacity = floats;
         d->heatmapDirty = true;
+    }
+    if (d->hasContour && !d->contourVertices.empty()) {
+        int floats = static_cast<int>(d->contourVertices.size());
+        d->contourBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
+                                      quint32(floats * sizeof(float)));
+        d->contourCapacity = floats;
+        d->contourDirty = true;
     }
 
     // ── Load shaders ───────────────────────────────────────────────
@@ -2257,6 +2440,19 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         }
     }
 
+    // ── Upload contour uniform + vertex data ───────────────────────
+    if (is2D && d->hasContour && d->contourBuffer) {
+        u->updateDynamicBuffer(d->contourUniformBuffer.get(), 0, 64, mvp.data());
+        u->updateDynamicBuffer(d->contourUniformBuffer.get(), 64, 16,
+                               d->contourColor.data());
+        if (d->contourDirty && !d->contourVertices.empty()) {
+            u->updateDynamicBuffer(d->contourBuffer.get(), 0,
+                                   quint32(d->contourVertices.size() * sizeof(float)),
+                                   d->contourVertices.data());
+            d->contourDirty = false;
+        }
+    }
+
     // ── Upload 3D uniforms ─────────────────────────────────────────
     if (d->mode3d == RenderMode3D::PointCloud) {
         Eigen::Vector4f params(d->data3dPointSize, 0.f, 0.f, 0.f);
@@ -2338,6 +2534,15 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         const QRhiCommandBuffer::VertexInput hmBuf(d->heatmapBuffer.get(), 0);
         cb->setVertexInput(0, 1, &hmBuf);
         cb->draw(d->heatmapVertexCount);
+    }
+
+    // ── Draw contour lines (2D, over any filled heatmap) ───────────
+    if (is2D && d->hasContour && d->contourBuffer && d->contourVertexCount > 0) {
+        cb->setGraphicsPipeline(d->gridPipeline.get());
+        cb->setShaderResources(d->contourSrb.get());
+        const QRhiCommandBuffer::VertexInput cbuf(d->contourBuffer.get(), 0);
+        cb->setVertexInput(0, 1, &cbuf);
+        cb->draw(d->contourVertexCount);
     }
 
     // ── Draw grid (2D only) ────────────────────────────────────────

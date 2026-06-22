@@ -181,6 +181,39 @@ auto boxplotStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     };
 }
 
+auto contourStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            // A smooth two-bump field (sum of two Gaussians) on a 48x48 grid —
+            // reads like a classifier decision surface.
+            int n = 48;
+            Eigen::MatrixXf z(n, n);
+            auto bump = [](float x, float y, float cx, float cy, float s) {
+                float dx = (x - cx) / s, dy = (y - cy) / s;
+                return std::exp(-(dx * dx + dy * dy));
+            };
+            for (int r = 0; r < n; ++r)
+                for (int c = 0; c < n; ++c) {
+                    float x = static_cast<float>(c);
+                    float y = static_cast<float>(r);
+                    z(r, c) = bump(x, y, n * 0.34f, n * 0.40f, n * 0.20f)
+                            - 0.8f * bump(x, y, n * 0.68f, n * 0.62f, n * 0.22f);
+                }
+
+            view.clear();
+            view.setTheme(theme);
+            view.setGridVisible(false);
+            view.setAxisArrowsVisible(false);
+            view.setTitle(QStringLiteral("Contour (filled + lines)"));
+            view.setCaption(QStringLiteral("Decision-surface-style field, coolwarm fill + iso-lines"));
+            view.setAxisLabels(QStringLiteral("x"), QStringLiteral("y"));
+            view.contourf(z, 12, Skigen::Plot::Colormap::Coolwarm);
+            view.contour(z, 8, {.color = Eigen::Vector4f(0.12f, 0.12f, 0.14f, 0.8f)});
+        }
+    };
+}
+
 auto heatmapStep(QString filename, Skigen::Plot::Theme theme,
                  Skigen::Plot::Colormap cmap = Skigen::Plot::Colormap::Viridis,
                  QString cmapName = QStringLiteral("viridis")) -> RenderStep {
@@ -307,6 +340,8 @@ int main(int argc, char* argv[]) {
         stemStep(QStringLiteral("stem_dark.png"), Skigen::Plot::Theme::dark()),
         boxplotStep(QStringLiteral("boxplot_paper.png"), Skigen::Plot::Theme::paper()),
         boxplotStep(QStringLiteral("boxplot_dark.png"), Skigen::Plot::Theme::dark()),
+        contourStep(QStringLiteral("contour_paper.png"), Skigen::Plot::Theme::paper()),
+        contourStep(QStringLiteral("contour_dark.png"), Skigen::Plot::Theme::dark()),
         heatmapStep(QStringLiteral("heatmap_paper.png"), Skigen::Plot::Theme::paper()),
         heatmapStep(QStringLiteral("heatmap_dark.png"), Skigen::Plot::Theme::dark()),
         heatmapStep(QStringLiteral("heatmap_jet.png"), Skigen::Plot::Theme::paper(),
