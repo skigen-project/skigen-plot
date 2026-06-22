@@ -95,7 +95,19 @@ struct PlotView::Impl {
     std::unique_ptr<QRhiGraphicsPipeline> linePipeline;
     std::unique_ptr<QRhiGraphicsPipeline> pointPipeline;
     std::unique_ptr<QRhiGraphicsPipeline> fillPipeline;
+    std::unique_ptr<QRhiGraphicsPipeline> heatmapPipeline;
     std::unique_ptr<QRhiGraphicsPipeline> gridPipeline;
+
+    // Heatmap (imshow) — single per-view dataset of per-vertex coloured
+    // triangles: interleaved (vec2 position, vec4 colour), stride 24.
+    std::unique_ptr<QRhiBuffer> heatmapBuffer;
+    std::unique_ptr<QRhiBuffer> heatmapUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> heatmapSrb;
+    std::vector<float> heatmapVertices;
+    int heatmapVertexCount = 0;
+    int heatmapCapacity = 0;
+    bool hasHeatmap = false;
+    bool heatmapDirty = false;
 
     // 3D pipelines
     std::unique_ptr<QRhiGraphicsPipeline> point3dPipeline;
@@ -197,7 +209,7 @@ struct PlotView::Impl {
     bool dragging = false;
     QPoint lastMousePos;
 
-    bool has2D() const { return !series2d.empty(); }
+    bool has2D() const { return !series2d.empty() || hasHeatmap; }
     bool has3D() const { return mode3d != RenderMode3D::None; }
     bool hasData() const { return has2D() || has3D(); }
 };
@@ -733,6 +745,71 @@ void PlotView::errorbarImpl(std::span<const float> x, std::span<const float> y,
     addFillSeries(verts, style);
 }
 
+void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
+                          Colormap cmap, float vmin, float vmax) {
+    if (rows <= 0 || cols <= 0) return;
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
+
+    // Eigen storage is column-major: element (r, c) is at index c*rows + r.
+    auto at = [&](int r, int c) -> float {
+        return data[static_cast<std::size_t>(c) * static_cast<std::size_t>(rows)
+                    + static_cast<std::size_t>(r)];
+    };
+
+    // Auto data range unless an explicit [vmin, vmax) was supplied.
+    if (!(vmin < vmax)) {
+        vmin = at(0, 0); vmax = at(0, 0);
+        for (int c = 0; c < cols; ++c)
+            for (int r = 0; r < rows; ++r) {
+                float v = at(r, c);
+                vmin = std::min(vmin, v); vmax = std::max(vmax, v);
+            }
+    }
+    const float range = std::max(vmax - vmin, 1e-12f);
+
+    // Interleaved (vec2 pos, vec4 colour) per vertex, 6 vertices per cell.
+    auto& verts = d->heatmapVertices;
+    verts.clear();
+    verts.reserve(static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols) * 36);
+    auto push = [&](float x, float y, const Eigen::Vector4f& col) {
+        verts.insert(verts.end(), {x, y, col.x(), col.y(), col.z(), col.w()});
+    };
+    for (int r = 0; r < rows; ++r) {
+        // Row 0 at the top (matplotlib imshow convention).
+        float y0 = static_cast<float>(rows - 1 - r);
+        float y1 = static_cast<float>(rows - r);
+        for (int c = 0; c < cols; ++c) {
+            float t = (at(r, c) - vmin) / range;
+            Eigen::Vector4f col = sampleColormap(cmap, t);
+            float x0 = static_cast<float>(c);
+            float x1 = static_cast<float>(c + 1);
+            push(x0, y0, col); push(x1, y0, col); push(x1, y1, col);
+            push(x0, y0, col); push(x1, y1, col); push(x0, y1, col);
+        }
+    }
+    d->heatmapVertexCount = static_cast<int>(verts.size() / 6);
+    d->hasHeatmap = true;
+    d->heatmapDirty = true;
+
+    // Bounds: the full cell grid.
+    d->bounds2d = BoundingBox2D();
+    BoundingBox2D bb;
+    bb.min = Eigen::Vector2f(0.0f, 0.0f);
+    bb.max = Eigen::Vector2f(static_cast<float>(cols), static_cast<float>(rows));
+    d->bounds2d = d->bounds2d.merge(bb);
+
+    if (d->pipelineReady) {
+        auto* r = rhi();
+        int floats = std::max(static_cast<int>(verts.size()), 1);
+        d->heatmapBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
+                                      quint32(floats * sizeof(float)));
+        d->heatmapCapacity = floats;
+    }
+    d->gridDirty = true;
+    update();
+}
+
 void PlotView::setPointCloudData(std::span<const float> data,
                                   int vertexCount,
                                   const PlotStyle& style) {
@@ -832,6 +909,10 @@ void PlotView::clear() {
     d->series2d.clear();
     d->nextColorIndex = 0;
     d->mode3d = RenderMode3D::None;
+    d->hasHeatmap = false;
+    d->heatmapVertices.clear();
+    d->heatmapVertexCount = 0;
+    d->heatmapBuffer.reset();
     d->meshEdgeVertices.clear();
     d->meshEdgeVertexCount = 0;
     d->guide3dVertices.clear();
@@ -1660,9 +1741,11 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->guide3dUniformBuffer = makeUB(r, 80);
     d->gridUniformBuffer    = makeUB(r, 80);
     d->axisUniformBuffer    = makeUB(r, 80);
+    d->heatmapUniformBuffer = makeUB(r, 80);
 
     // ── SRBs ───────────────────────────────────────────────────────
     d->point3dSrb = makeUniqueSrb(r, d->point3dUniformBuffer.get());
+    d->heatmapSrb = makeUniqueSrb(r, d->heatmapUniformBuffer.get());
     d->meshSrb    = makeUniqueSrb(r, d->meshUniformBuffer.get());
     d->meshEdgeSrb = makeUniqueSrb(r, d->meshEdgeUniformBuffer.get());
     d->guide3dSrb = makeUniqueSrb(r, d->guide3dUniformBuffer.get());
@@ -1680,10 +1763,19 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
         s.vbCapacity = std::max(floats, 1);
         s.dirty = true;
     }
+    if (d->hasHeatmap && !d->heatmapVertices.empty()) {
+        int floats = static_cast<int>(d->heatmapVertices.size());
+        d->heatmapBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
+                                      quint32(floats * sizeof(float)));
+        d->heatmapCapacity = floats;
+        d->heatmapDirty = true;
+    }
 
     // ── Load shaders ───────────────────────────────────────────────
     auto lineVs  = loadShader(u":/skigen/plot/line2d.vert.qsb"_s);
     auto lineFs  = loadShader(u":/skigen/plot/line2d.frag.qsb"_s);
+    auto fillVs  = loadShader(u":/skigen/plot/fill2d.vert.qsb"_s);
+    auto fillFs  = loadShader(u":/skigen/plot/fill2d.frag.qsb"_s);
     auto pointVs = loadShader(u":/skigen/plot/point2d.vert.qsb"_s);
     auto pointFs = loadShader(u":/skigen/plot/point2d.frag.qsb"_s);
     auto edgeVs  = loadShader(u":/skigen/plot/edge3d.vert.qsb"_s);
@@ -1691,8 +1783,8 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     auto pt3dFs  = loadShader(u":/skigen/plot/point3d.frag.qsb"_s);
     auto meshVs  = loadShader(u":/skigen/plot/mesh3d.vert.qsb"_s);
     auto meshFs  = loadShader(u":/skigen/plot/mesh3d.frag.qsb"_s);
-    if (!lineVs || !lineFs || !pointVs || !pointFs || !edgeVs ||
-        !pt3dVs || !pt3dFs || !meshVs  || !meshFs) {
+    if (!lineVs || !lineFs || !fillVs || !fillFs || !pointVs || !pointFs ||
+        !edgeVs || !pt3dVs || !pt3dFs || !meshVs  || !meshFs) {
         qWarning("SkigenPlot: shader loading failed");
         return;
     }
@@ -1704,6 +1796,15 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     layout2d.setBindings({QRhiVertexInputBinding(2 * sizeof(float))});
     layout2d.setAttributes({
         QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float2, 0)
+    });
+
+    // ── Heatmap layout (vec2 pos + vec4 colour, stride 24) ─────────
+    QRhiVertexInputLayout layoutHeatmap;
+    layoutHeatmap.setBindings({QRhiVertexInputBinding(6 * sizeof(float))});
+    layoutHeatmap.setAttributes({
+        QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float2, 0),
+        QRhiVertexInputAttribute(0, 1, QRhiVertexInputAttribute::Float4,
+                                 2 * sizeof(float))
     });
 
     // ── 3D point layout (vec3, stride 12) ──────────────────────────
@@ -1784,6 +1885,20 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->fillPipeline->setSampleCount(sc);
     d->fillPipeline->setTargetBlends({alphaBlend()});
     d->fillPipeline->create();
+
+    // ── Heatmap pipeline (Triangles, per-vertex colour, no depth) ──
+    d->heatmapPipeline.reset(r->newGraphicsPipeline());
+    d->heatmapPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
+    d->heatmapPipeline->setShaderStages({
+        {QRhiShaderStage::Vertex, *fillVs},
+        {QRhiShaderStage::Fragment, *fillFs}
+    });
+    d->heatmapPipeline->setVertexInputLayout(layoutHeatmap);
+    d->heatmapPipeline->setShaderResourceBindings(d->heatmapSrb.get());
+    d->heatmapPipeline->setRenderPassDescriptor(rpDesc);
+    d->heatmapPipeline->setSampleCount(sc);
+    d->heatmapPipeline->setTargetBlends({alphaBlend()});
+    d->heatmapPipeline->create();
 
     // ── 3D Point pipeline (Points, depth enabled) ──────────────────
     d->point3dPipeline.reset(r->newGraphicsPipeline());
@@ -2022,6 +2137,17 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         }
     }
 
+    // ── Upload heatmap uniform + vertex data ───────────────────────
+    if (is2D && d->hasHeatmap && d->heatmapBuffer) {
+        u->updateDynamicBuffer(d->heatmapUniformBuffer.get(), 0, 64, mvp.data());
+        if (d->heatmapDirty && !d->heatmapVertices.empty()) {
+            u->updateDynamicBuffer(d->heatmapBuffer.get(), 0,
+                                   quint32(d->heatmapVertices.size() * sizeof(float)),
+                                   d->heatmapVertices.data());
+            d->heatmapDirty = false;
+        }
+    }
+
     // ── Upload 3D uniforms ─────────────────────────────────────────
     if (d->mode3d == RenderMode3D::PointCloud) {
         Eigen::Vector4f params(d->data3dPointSize, 0.f, 0.f, 0.f);
@@ -2094,6 +2220,15 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         const QRhiCommandBuffer::VertexInput guideBuf(d->guide3dBuffer.get(), 0);
         cb->setVertexInput(0, 1, &guideBuf);
         cb->draw(d->guide3dVertexCount);
+    }
+
+    // ── Draw heatmap (2D, under grid/axes) ─────────────────────────
+    if (is2D && d->hasHeatmap && d->heatmapBuffer && d->heatmapVertexCount > 0) {
+        cb->setGraphicsPipeline(d->heatmapPipeline.get());
+        cb->setShaderResources(d->heatmapSrb.get());
+        const QRhiCommandBuffer::VertexInput hmBuf(d->heatmapBuffer.get(), 0);
+        cb->setVertexInput(0, 1, &hmBuf);
+        cb->draw(d->heatmapVertexCount);
     }
 
     // ── Draw grid (2D only) ────────────────────────────────────────

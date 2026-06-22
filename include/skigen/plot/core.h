@@ -80,6 +80,22 @@ struct SKIGENPLOT_EXPORT BoundingBox3D {
     }
 };
 
+// ── Colormaps (for heatmaps / imshow) ───────────────────────────────────
+
+/// @brief Built-in sequential / diverging colormaps for scalar fields.
+enum class Colormap {
+    Viridis,   ///< Perceptually-uniform sequential (default).
+    Magma,     ///< Perceptually-uniform sequential, dark→bright.
+    Plasma,    ///< Perceptually-uniform sequential, purple→yellow.
+    Gray,      ///< Linear grayscale.
+    Coolwarm,  ///< Diverging blue→white→red (centred data).
+};
+
+/// @brief Sample @p map at normalised position @p t (clamped to [0, 1]),
+///   returning an opaque RGBA colour.
+SKIGENPLOT_EXPORT
+auto sampleColormap(Colormap map, float t) -> Eigen::Vector4f;
+
 // ── Orthographic projection (2D data → NDC) ─────────────────────────────
 
 SKIGENPLOT_EXPORT

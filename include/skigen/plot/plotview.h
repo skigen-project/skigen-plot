@@ -153,6 +153,22 @@ public:
                      {ef.data(), static_cast<std::size_t>(ef.size())}, style);
     }
 
+    // ── 2D heatmap / image (colormapped R×C matrix) ─────────────────
+
+    /// @brief Draw matrix @p m as a colormapped grid of cells (row 0 at the
+    ///   top, matching matplotlib's `imshow`). The data range is auto-scaled
+    ///   to [min, max] across @p m unless @p vmin < @p vmax is given.
+    template <typename Derived>
+    void imshow(const Eigen::MatrixBase<Derived>& m,
+                Colormap cmap = Colormap::Viridis,
+                float vmin = 0.0f, float vmax = 0.0f)
+    {
+        Eigen::MatrixXf mf = m.derived().template cast<float>().eval();
+        imshowImpl({mf.data(), static_cast<std::size_t>(mf.size())},
+                   static_cast<int>(mf.rows()), static_cast<int>(mf.cols()),
+                   cmap, vmin, vmax);
+    }
+
     // ── 3D point cloud (N×3 matrix) ─────────────────────────────────
 
     template <typename Derived>
@@ -258,6 +274,8 @@ private:
                   const PlotStyle& style);
     void errorbarImpl(std::span<const float> x, std::span<const float> y,
                       std::span<const float> yerr, const PlotStyle& style);
+    void imshowImpl(std::span<const float> data, int rows, int cols,
+                    Colormap cmap, float vmin, float vmax);
 
     void setPointCloudData(std::span<const float> data, int vertexCount,
                            const PlotStyle& style);

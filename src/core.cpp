@@ -36,6 +36,69 @@ auto BoundingBox3D::expanded(float margin) const -> BoundingBox3D {
     return {min - pad, max + pad};
 }
 
+// ── Colormaps ────────────────────────────────────────────────────────────
+
+namespace {
+
+// Piecewise-linear interpolation over a small table of RGB anchor points
+// sampled at evenly-spaced positions in [0, 1].
+template <std::size_t N>
+auto interpAnchors(const std::array<Eigen::Vector3f, N>& anchors, float t)
+    -> Eigen::Vector4f {
+    t = std::clamp(t, 0.0f, 1.0f);
+    float scaled = t * static_cast<float>(N - 1);
+    auto i0 = static_cast<std::size_t>(scaled);
+    if (i0 >= N - 1) return {anchors[N - 1].x(), anchors[N - 1].y(),
+                             anchors[N - 1].z(), 1.0f};
+    float f = scaled - static_cast<float>(i0);
+    Eigen::Vector3f c = anchors[i0] * (1.0f - f) + anchors[i0 + 1] * f;
+    return {c.x(), c.y(), c.z(), 1.0f};
+}
+
+} // namespace
+
+auto sampleColormap(Colormap map, float t) -> Eigen::Vector4f {
+    switch (map) {
+        case Colormap::Viridis: {
+            // matplotlib `viridis` anchors (dark blue → green → yellow).
+            static const std::array<Eigen::Vector3f, 6> a = {{
+                {0.267f, 0.005f, 0.329f}, {0.283f, 0.141f, 0.458f},
+                {0.254f, 0.265f, 0.530f}, {0.164f, 0.471f, 0.558f},
+                {0.135f, 0.659f, 0.518f}, {0.993f, 0.906f, 0.144f},
+            }};
+            return interpAnchors(a, t);
+        }
+        case Colormap::Magma: {
+            static const std::array<Eigen::Vector3f, 6> a = {{
+                {0.001f, 0.000f, 0.014f}, {0.232f, 0.060f, 0.438f},
+                {0.551f, 0.161f, 0.506f}, {0.870f, 0.288f, 0.409f},
+                {0.987f, 0.591f, 0.385f}, {0.987f, 0.991f, 0.749f},
+            }};
+            return interpAnchors(a, t);
+        }
+        case Colormap::Plasma: {
+            static const std::array<Eigen::Vector3f, 6> a = {{
+                {0.050f, 0.030f, 0.528f}, {0.417f, 0.000f, 0.658f},
+                {0.692f, 0.165f, 0.564f}, {0.881f, 0.392f, 0.383f},
+                {0.988f, 0.652f, 0.211f}, {0.940f, 0.975f, 0.131f},
+            }};
+            return interpAnchors(a, t);
+        }
+        case Colormap::Coolwarm: {
+            static const std::array<Eigen::Vector3f, 3> a = {{
+                {0.230f, 0.299f, 0.754f}, {0.865f, 0.865f, 0.865f},
+                {0.706f, 0.016f, 0.150f},
+            }};
+            return interpAnchors(a, t);
+        }
+        case Colormap::Gray:
+        default: {
+            float g = std::clamp(t, 0.0f, 1.0f);
+            return {g, g, g, 1.0f};
+        }
+    }
+}
+
 // ── Orthographic projection ──────────────────────────────────────────────
 
 auto orthoProjection(const BoundingBox2D& bounds,

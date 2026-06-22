@@ -135,6 +135,29 @@ auto errorbarStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     };
 }
 
+auto heatmapStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            // A 5x5 "confusion-matrix"-like field: strong diagonal + noise.
+            int n = 5;
+            Eigen::MatrixXf m(n, n);
+            for (int r = 0; r < n; ++r)
+                for (int c = 0; c < n; ++c)
+                    m(r, c) = (r == c) ? 0.85f + 0.03f * static_cast<float>(r)
+                                       : 0.04f * static_cast<float>((r * 3 + c) % 4);
+
+            view.clear();
+            view.setTheme(theme);
+            view.setGridVisible(false);
+            view.setTitle(QStringLiteral("Heatmap (imshow)"));
+            view.setCaption(QStringLiteral("Confusion-matrix-style field, viridis colormap"));
+            view.setAxisLabels(QStringLiteral("predicted"), QStringLiteral("true"));
+            view.imshow(m, Skigen::Plot::Colormap::Viridis);
+        }
+    };
+}
+
 auto pointCloudStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     return {
         std::move(filename),
@@ -228,6 +251,8 @@ int main(int argc, char* argv[]) {
         barStep(QStringLiteral("bar_dark.png"), Skigen::Plot::Theme::dark()),
         errorbarStep(QStringLiteral("errorbar_paper.png"), Skigen::Plot::Theme::paper()),
         errorbarStep(QStringLiteral("errorbar_dark.png"), Skigen::Plot::Theme::dark()),
+        heatmapStep(QStringLiteral("heatmap_paper.png"), Skigen::Plot::Theme::paper()),
+        heatmapStep(QStringLiteral("heatmap_dark.png"), Skigen::Plot::Theme::dark()),
         pointCloudStep(QStringLiteral("point_cloud_paper.png"), Skigen::Plot::Theme::paper()),
         pointCloudStep(QStringLiteral("point_cloud_dark.png"), Skigen::Plot::Theme::dark()),
         meshStep(QStringLiteral("mesh_paper.png"), Skigen::Plot::Theme::paper()),
@@ -249,6 +274,7 @@ int main(int argc, char* argv[]) {
         }
 
         const auto& step = steps[*index];
+        view.setGridVisible(true);  // default; a step may turn it off
         step.setup(view);
         // The clean paper/matplotlib look uses plain spines (no arrowheads).
         const bool plainSpines = step.filename.contains(QStringLiteral("_mpl"))

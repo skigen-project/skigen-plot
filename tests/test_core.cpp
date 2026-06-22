@@ -381,6 +381,32 @@ void test_matplotlib_style_is_paper_plus_tab10() {
     ASSERT_TRUE((mplStyle.seriesColors[0] - mpl[0]).norm() < 1e-6f);
 }
 
+void test_colormap_endpoints_and_clamp() {
+    using Skigen::Plot::Colormap;
+    using Skigen::Plot::sampleColormap;
+    // Gray is exactly linear: t=0 -> black, t=1 -> white.
+    auto g0 = sampleColormap(Colormap::Gray, 0.0f);
+    auto g1 = sampleColormap(Colormap::Gray, 1.0f);
+    ASSERT_NEAR(g0.x(), 0.0f, 1e-6f);
+    ASSERT_NEAR(g1.x(), 1.0f, 1e-6f);
+    // All maps return opaque colours within [0, 1] and clamp out-of-range t.
+    for (auto cm : {Colormap::Viridis, Colormap::Magma, Colormap::Plasma,
+                    Colormap::Coolwarm, Colormap::Gray}) {
+        auto lo = sampleColormap(cm, -5.0f);
+        auto hi = sampleColormap(cm, 5.0f);
+        auto mid = sampleColormap(cm, 0.5f);
+        for (auto& c : {lo, hi, mid}) {
+            ASSERT_TRUE(c.x() >= 0.0f && c.x() <= 1.0f);
+            ASSERT_TRUE(c.y() >= 0.0f && c.y() <= 1.0f);
+            ASSERT_TRUE(c.z() >= 0.0f && c.z() <= 1.0f);
+            ASSERT_NEAR(c.w(), 1.0f, 1e-6f);
+        }
+        // Clamping: t<0 == t=0, t>1 == t=1.
+        ASSERT_TRUE((lo - sampleColormap(cm, 0.0f)).norm() < 1e-6f);
+        ASSERT_TRUE((hi - sampleColormap(cm, 1.0f)).norm() < 1e-6f);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // BoundingBox2D::merge tests
 // ---------------------------------------------------------------------------
@@ -451,6 +477,7 @@ int main() {
     run_test("palette_distinct",           test_palette_distinct);
     run_test("theme_with_palette",         test_theme_with_palette);
     run_test("matplotlib_style_paper_tab10", test_matplotlib_style_is_paper_plus_tab10);
+    run_test("colormap_endpoints_clamp",   test_colormap_endpoints_and_clamp);
 
     std::cout << std::string(40, '-') << "\n";
     std::cout << g_passed << " passed, " << g_failed << " failed\n";

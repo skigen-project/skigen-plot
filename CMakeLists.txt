@@ -90,6 +90,8 @@ qt_add_shaders(SkigenPlot "shaders"
     FILES
         src/shaders/line2d.vert
         src/shaders/line2d.frag
+        src/shaders/fill2d.vert
+        src/shaders/fill2d.frag
         src/shaders/edge3d.vert
         src/shaders/point2d.vert
         src/shaders/point2d.frag
