@@ -257,7 +257,7 @@ auto Theme::light() -> Theme {
     return t;
 }
 
-auto Theme::matplotlib() -> Theme {
+auto Theme::paper() -> Theme {
     // Clean matplotlib-style layout — white figure, light-gray gridlines,
     // muted dark-gray spines/text — paired with Skigen's own vivid
     // cyan/violet/emerald categorical palette (more qualitative on white
@@ -269,6 +269,12 @@ auto Theme::matplotlib() -> Theme {
     t.textColor  = {0.150f, 0.150f, 0.150f, 1.0f};  // #262626 near-black
     t.seriesColors = seriesPalette(Palette::Skigen);
     return t;
+}
+
+auto Theme::matplotlibStyle() -> Theme {
+    // The clean paper() layout with matplotlib's own `tab10` palette, so the
+    // result matches `matplotlib.pyplot` defaults as closely as possible.
+    return paper().withPalette(Palette::Matplotlib);
 }
 
 } // namespace Skigen::Plot

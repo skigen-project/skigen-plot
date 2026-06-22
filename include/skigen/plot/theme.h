@@ -31,12 +31,18 @@ struct SKIGENPLOT_EXPORT Theme {
     static auto dark() -> Theme;
     static auto light() -> Theme;
 
-    /// @brief Matplotlib-style light theme: white background, light-gray
-    ///   solid gridlines, muted dark-gray axes/text, and the vivid Skigen
-    ///   categorical series palette. Produces figures with the clean
-    ///   `matplotlib.pyplot` layout. Pair with Theme::withPalette() (or
-    ///   PlotView::setPalette()) to swap in the `tab10` palette instead.
-    static auto matplotlib() -> Theme;
+    /// @brief Clean "paper" light theme: white background, light-gray solid
+    ///   gridlines, muted dark-gray axes/text, and the vivid Skigen
+    ///   categorical series palette. This is the matplotlib-style *layout*
+    ///   paired with Skigen's own colours — ideal for publication figures.
+    ///   Use withPalette() / PlotView::setPalette() to swap the palette.
+    static auto paper() -> Theme;
+
+    /// @brief Faithful matplotlib look: the clean white paper() layout with
+    ///   the canonical matplotlib `tab10` series palette. Equivalent to
+    ///   `Theme::paper().withPalette(Palette::Matplotlib)`. Use this when you
+    ///   want output that matches `matplotlib.pyplot` defaults exactly.
+    static auto matplotlibStyle() -> Theme;
 
     /// @brief A copy of this theme with its series colours replaced by the
     ///   given @p palette. Layout (background, grid, axes, text) is kept.

@@ -360,7 +360,7 @@ void test_palette_distinct() {
 }
 
 void test_theme_with_palette() {
-    auto base = Skigen::Plot::Theme::matplotlib();
+    auto base = Skigen::Plot::Theme::paper();
     auto swapped = base.withPalette(Skigen::Plot::Palette::Matplotlib);
     // Layout is preserved.
     ASSERT_TRUE((swapped.background - base.background).norm() < 1e-6f);
@@ -368,6 +368,17 @@ void test_theme_with_palette() {
     // Series colours now match the requested palette.
     auto mpl = Skigen::Plot::seriesPalette(Skigen::Plot::Palette::Matplotlib);
     ASSERT_TRUE((swapped.seriesColors[0] - mpl[0]).norm() < 1e-6f);
+}
+
+void test_matplotlib_style_is_paper_plus_tab10() {
+    auto paper = Skigen::Plot::Theme::paper();
+    auto mplStyle = Skigen::Plot::Theme::matplotlibStyle();
+    // Same layout as paper().
+    ASSERT_TRUE((mplStyle.background - paper.background).norm() < 1e-6f);
+    ASSERT_TRUE((mplStyle.gridColor - paper.gridColor).norm() < 1e-6f);
+    // But the canonical tab10 palette.
+    auto mpl = Skigen::Plot::seriesPalette(Skigen::Plot::Palette::Matplotlib);
+    ASSERT_TRUE((mplStyle.seriesColors[0] - mpl[0]).norm() < 1e-6f);
 }
 
 // ---------------------------------------------------------------------------
@@ -439,6 +450,7 @@ int main() {
     run_test("theme_light",                test_theme_light);
     run_test("palette_distinct",           test_palette_distinct);
     run_test("theme_with_palette",         test_theme_with_palette);
+    run_test("matplotlib_style_paper_tab10", test_matplotlib_style_is_paper_plus_tab10);
 
     std::cout << std::string(40, '-') << "\n";
     std::cout << g_passed << " passed, " << g_failed << " failed\n";

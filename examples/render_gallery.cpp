@@ -149,15 +149,19 @@ int main(int argc, char* argv[]) {
     QDir().mkpath(outDir);
 
     std::vector<RenderStep> steps = {
-        lineStep(QStringLiteral("line_mpl.png"), Skigen::Plot::Theme::matplotlib()),
+        // `_paper` = clean white layout + Skigen palette (the default look).
+        // `_mpl`   = the same layout with matplotlib's `tab10` palette.
+        lineStep(QStringLiteral("line_paper.png"), Skigen::Plot::Theme::paper()),
+        lineStep(QStringLiteral("line_mpl.png"), Skigen::Plot::Theme::matplotlibStyle()),
         lineStep(QStringLiteral("line_dark.png"), Skigen::Plot::Theme::dark()),
         lineStep(QStringLiteral("line_light.png"), Skigen::Plot::Theme::light()),
-        scatterStep(QStringLiteral("scatter_mpl.png"), Skigen::Plot::Theme::matplotlib()),
+        scatterStep(QStringLiteral("scatter_paper.png"), Skigen::Plot::Theme::paper()),
+        scatterStep(QStringLiteral("scatter_mpl.png"), Skigen::Plot::Theme::matplotlibStyle()),
         scatterStep(QStringLiteral("scatter_dark.png"), Skigen::Plot::Theme::dark()),
         scatterStep(QStringLiteral("scatter_light.png"), Skigen::Plot::Theme::light()),
-        pointCloudStep(QStringLiteral("point_cloud_mpl.png"), Skigen::Plot::Theme::matplotlib()),
+        pointCloudStep(QStringLiteral("point_cloud_paper.png"), Skigen::Plot::Theme::paper()),
         pointCloudStep(QStringLiteral("point_cloud_dark.png"), Skigen::Plot::Theme::dark()),
-        meshStep(QStringLiteral("mesh_mpl.png"), Skigen::Plot::Theme::matplotlib()),
+        meshStep(QStringLiteral("mesh_paper.png"), Skigen::Plot::Theme::paper()),
         meshStep(QStringLiteral("mesh_dark.png"), Skigen::Plot::Theme::dark()),
     };
 
@@ -177,8 +181,10 @@ int main(int argc, char* argv[]) {
 
         const auto& step = steps[*index];
         step.setup(view);
-        // The matplotlib look uses plain spines (no axis arrowheads).
-        view.setAxisArrowsVisible(!step.filename.contains(QStringLiteral("_mpl")));
+        // The clean paper/matplotlib look uses plain spines (no arrowheads).
+        const bool plainSpines = step.filename.contains(QStringLiteral("_mpl"))
+                                 || step.filename.contains(QStringLiteral("_paper"));
+        view.setAxisArrowsVisible(!plainSpines);
         view.update();
 
         QTimer::singleShot(180, &view, [&, step]() {
