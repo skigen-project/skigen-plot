@@ -228,8 +228,8 @@ auto Theme::matplotlib() -> Theme {
     // categorical palette (first six colours).
     Theme t;
     t.background = {1.000f, 1.000f, 1.000f, 1.0f};  // white #ffffff
-    t.gridColor  = {0.690f, 0.690f, 0.690f, 0.55f}; // #b0b0b0 light gray
-    t.axisColor  = {0.200f, 0.200f, 0.200f, 0.90f}; // #333333 spine gray
+    t.gridColor  = {0.690f, 0.690f, 0.690f, 0.42f}; // #b0b0b0 @ ~0.4 alpha
+    t.axisColor  = {0.150f, 0.150f, 0.150f, 0.85f}; // #262626 spine gray
     t.textColor  = {0.150f, 0.150f, 0.150f, 1.0f};  // #262626 near-black
     t.seriesColors = {{
         {0.122f, 0.467f, 0.706f, 1.0f}, // #1f77b4 tab:blue
