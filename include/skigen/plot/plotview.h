@@ -101,6 +101,10 @@ public:
     void setTheme(const Theme& theme);
     auto theme() const -> const Theme&;
 
+    /// @brief Replace only the series colours of the current theme with the
+    ///   given palette, keeping the existing layout (background, grid, axes).
+    void setPalette(Palette palette);
+
     // ── Grid and axes ───────────────────────────────────────────────
 
     void setGridVisible(bool visible);

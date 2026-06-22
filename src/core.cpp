@@ -186,6 +186,41 @@ auto computeVertexNormals(std::span<const float> vertices, int vertexCount,
     return interleaved;
 }
 
+// ── Palettes ──────────────────────────────────────────────────────────────
+
+auto seriesPalette(Palette palette) -> std::array<Eigen::Vector4f, 6> {
+    switch (palette) {
+        case Palette::Matplotlib:
+            // Canonical matplotlib `tab10`, first six colours.
+            return {{
+                {0.122f, 0.467f, 0.706f, 1.0f}, // #1f77b4 tab:blue
+                {1.000f, 0.498f, 0.055f, 1.0f}, // #ff7f0e tab:orange
+                {0.173f, 0.627f, 0.173f, 1.0f}, // #2ca02c tab:green
+                {0.839f, 0.153f, 0.157f, 1.0f}, // #d62728 tab:red
+                {0.580f, 0.404f, 0.741f, 1.0f}, // #9467bd tab:purple
+                {0.549f, 0.337f, 0.294f, 1.0f}, // #8c564b tab:brown
+            }};
+        case Palette::Skigen:
+        default:
+            // Vivid Skigen categorical palette (tuned for both dark and
+            // light backgrounds).
+            return {{
+                {0.000f, 0.549f, 0.663f, 0.98f}, // #008ca9 deep cyan
+                {0.431f, 0.192f, 0.855f, 0.98f}, // #6e31da violet
+                {0.035f, 0.584f, 0.408f, 0.98f}, // #099568 emerald
+                {0.765f, 0.188f, 0.125f, 0.98f}, // #c33020 vermillion
+                {0.776f, 0.482f, 0.000f, 0.98f}, // #c67b00 amber
+                {0.145f, 0.388f, 0.922f, 0.98f}, // #2563eb blue
+            }};
+    }
+}
+
+auto Theme::withPalette(Palette palette) const -> Theme {
+    Theme t = *this;
+    t.seriesColors = seriesPalette(palette);
+    return t;
+}
+
 // ── Theme presets ───────────────────────────────────────────────────────
 
 auto Theme::dark() -> Theme {
@@ -232,14 +267,7 @@ auto Theme::matplotlib() -> Theme {
     t.gridColor  = {0.690f, 0.690f, 0.690f, 0.42f}; // #b0b0b0 @ ~0.4 alpha
     t.axisColor  = {0.150f, 0.150f, 0.150f, 0.85f}; // #262626 spine gray
     t.textColor  = {0.150f, 0.150f, 0.150f, 1.0f};  // #262626 near-black
-    t.seriesColors = {{
-        {0.000f, 0.549f, 0.663f, 0.98f}, // #008ca9 deep cyan
-        {0.431f, 0.192f, 0.855f, 0.98f}, // #6e31da violet
-        {0.035f, 0.584f, 0.408f, 0.98f}, // #099568 emerald
-        {0.765f, 0.188f, 0.125f, 0.98f}, // #c33020 vermillion
-        {0.776f, 0.482f, 0.000f, 0.98f}, // #c67b00 amber
-        {0.145f, 0.388f, 0.922f, 0.98f}, // #2563eb blue
-    }};
+    t.seriesColors = seriesPalette(Palette::Skigen);
     return t;
 }
 

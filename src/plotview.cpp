@@ -718,6 +718,10 @@ auto PlotView::theme() const -> const Theme& {
     return d->theme;
 }
 
+void PlotView::setPalette(Palette palette) {
+    setTheme(d->theme.withPalette(palette));
+}
+
 void PlotView::setGridVisible(bool visible) {
     d->showGrid = visible;
     update();

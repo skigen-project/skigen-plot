@@ -8,6 +8,19 @@
 
 namespace Skigen::Plot {
 
+/// @brief Selectable categorical colour palette for plotted series.
+///
+/// A palette only governs the per-series colours; it is orthogonal to a
+/// theme's layout (background, grid, axes). Use Theme::withPalette() or
+/// PlotView::setPalette() to apply a palette to any theme.
+enum class Palette {
+    Skigen,      ///< Vivid cyan / violet / emerald categorical palette (default).
+    Matplotlib,  ///< Canonical matplotlib `tab10` palette (first six colours).
+};
+
+/// @brief The six categorical series colours for the given palette.
+SKIGENPLOT_EXPORT auto seriesPalette(Palette palette) -> std::array<Eigen::Vector4f, 6>;
+
 struct SKIGENPLOT_EXPORT Theme {
     Eigen::Vector4f background;
     Eigen::Vector4f gridColor;
@@ -19,10 +32,15 @@ struct SKIGENPLOT_EXPORT Theme {
     static auto light() -> Theme;
 
     /// @brief Matplotlib-style light theme: white background, light-gray
-    ///   solid gridlines, muted dark-gray axes/text, and the canonical
-    ///   matplotlib `tab10` categorical series palette. Produces figures
-    ///   that match the look of `matplotlib.pyplot` defaults.
+    ///   solid gridlines, muted dark-gray axes/text, and the vivid Skigen
+    ///   categorical series palette. Produces figures with the clean
+    ///   `matplotlib.pyplot` layout. Pair with Theme::withPalette() (or
+    ///   PlotView::setPalette()) to swap in the `tab10` palette instead.
     static auto matplotlib() -> Theme;
+
+    /// @brief A copy of this theme with its series colours replaced by the
+    ///   given @p palette. Layout (background, grid, axes, text) is kept.
+    [[nodiscard]] auto withPalette(Palette palette) const -> Theme;
 };
 
 } // namespace Skigen::Plot

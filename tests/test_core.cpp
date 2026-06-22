@@ -349,6 +349,27 @@ void test_theme_light() {
     ASSERT_TRUE(t.seriesColors[0].norm() > 0.f);
 }
 
+void test_palette_distinct() {
+    auto sk = Skigen::Plot::seriesPalette(Skigen::Plot::Palette::Skigen);
+    auto mpl = Skigen::Plot::seriesPalette(Skigen::Plot::Palette::Matplotlib);
+    // The two palettes differ in their first colour.
+    ASSERT_TRUE((sk[0] - mpl[0]).norm() > 1e-3f);
+    // matplotlib `tab:blue` (#1f77b4) is the canonical first colour.
+    ASSERT_NEAR(mpl[0].x(), 0.122f, 1e-3f);
+    ASSERT_NEAR(mpl[0].y(), 0.467f, 1e-3f);
+}
+
+void test_theme_with_palette() {
+    auto base = Skigen::Plot::Theme::matplotlib();
+    auto swapped = base.withPalette(Skigen::Plot::Palette::Matplotlib);
+    // Layout is preserved.
+    ASSERT_TRUE((swapped.background - base.background).norm() < 1e-6f);
+    ASSERT_TRUE((swapped.gridColor - base.gridColor).norm() < 1e-6f);
+    // Series colours now match the requested palette.
+    auto mpl = Skigen::Plot::seriesPalette(Skigen::Plot::Palette::Matplotlib);
+    ASSERT_TRUE((swapped.seriesColors[0] - mpl[0]).norm() < 1e-6f);
+}
+
 // ---------------------------------------------------------------------------
 // BoundingBox2D::merge tests
 // ---------------------------------------------------------------------------
@@ -416,6 +437,8 @@ int main() {
     run_test("vertex_normals_positions",   test_vertex_normals_preserves_positions);
     run_test("theme_dark",                 test_theme_dark);
     run_test("theme_light",                test_theme_light);
+    run_test("palette_distinct",           test_palette_distinct);
+    run_test("theme_with_palette",         test_theme_with_palette);
 
     std::cout << std::string(40, '-') << "\n";
     std::cout << g_passed << " passed, " << g_failed << " failed\n";
