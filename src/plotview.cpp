@@ -29,7 +29,7 @@ namespace Skigen::Plot {
 // ── Render mode (for 3D, which stays single-dataset) ───────────────
 
 enum class RenderMode3D { None, PointCloud, Mesh };
-enum class SeriesKind { Line, Scatter };
+enum class SeriesKind { Line, Scatter, Fill };
 
 class PlotTextOverlay : public QWidget {
 public:
@@ -94,6 +94,7 @@ struct PlotView::Impl {
     // Shared pipelines (all Line2D series share linePipeline, etc.)
     std::unique_ptr<QRhiGraphicsPipeline> linePipeline;
     std::unique_ptr<QRhiGraphicsPipeline> pointPipeline;
+    std::unique_ptr<QRhiGraphicsPipeline> fillPipeline;
     std::unique_ptr<QRhiGraphicsPipeline> gridPipeline;
 
     // 3D pipelines
@@ -551,6 +552,185 @@ void PlotView::addSeriesImpl(int kindInt,
     recomputeBounds();
     d->gridDirty = true;
     update();
+}
+
+void PlotView::addFillSeries(std::span<const float> triangleVertices,
+                             const PlotStyle& style) {
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
+
+    Series2D series;
+    series.kind = SeriesKind::Fill;
+    series.vertices.assign(triangleVertices.begin(), triangleVertices.end());
+    series.vertexCount = static_cast<int>(series.vertices.size() / 2);
+
+    int colorIdx = d->nextColorIndex;
+    d->nextColorIndex++;
+    Eigen::Vector4f resolvedColor = style.color.value_or(
+        d->theme.seriesColors[static_cast<std::size_t>(colorIdx) % d->theme.seriesColors.size()]);
+    if (style.opacity < 1.0f)
+        resolvedColor.w() = style.opacity;
+    series.color = resolvedColor;
+    series.dirty = true;
+
+    if (d->pipelineReady) {
+        auto* r = rhi();
+        series.ub = makeRawUB(r, 80u);
+        series.srb = makeSrb(r, series.ub);
+        int floats = std::max(static_cast<int>(series.vertices.size()), 1);
+        series.vb = makeRawDynBuf(r, QRhiBuffer::VertexBuffer,
+                                  quint32(floats * sizeof(float)));
+        series.vbCapacity = floats;
+    }
+
+    d->series2d.push_back(std::move(series));
+    recomputeBounds();
+    d->gridDirty = true;
+    update();
+}
+
+namespace {
+
+// Append the two triangles of an axis-aligned rectangle (6 vec2 vertices).
+void appendQuad(std::vector<float>& out,
+                float x0, float y0, float x1, float y1) {
+    out.insert(out.end(), {
+        x0, y0,  x1, y0,  x1, y1,   // triangle 1
+        x0, y0,  x1, y1,  x0, y1,   // triangle 2
+    });
+}
+
+} // namespace
+
+void PlotView::histImpl(std::span<const float> values, int bins, bool density,
+                        const PlotStyle& style) {
+    const int n = static_cast<int>(values.size());
+    if (n == 0) return;
+
+    float lo = values[0], hi = values[0];
+    for (float v : values) { lo = std::min(lo, v); hi = std::max(hi, v); }
+    if (hi <= lo) hi = lo + 1.0f;
+
+    // Sturges' rule default: ceil(log2(n)) + 1.
+    if (bins <= 0)
+        bins = std::max(1, static_cast<int>(std::ceil(std::log2(std::max(1, n)) + 1.0)));
+
+    std::vector<int> counts(static_cast<std::size_t>(bins), 0);
+    const float binW = (hi - lo) / static_cast<float>(bins);
+    for (float v : values) {
+        int b = static_cast<int>((v - lo) / binW);
+        b = std::clamp(b, 0, bins - 1);
+        counts[static_cast<std::size_t>(b)]++;
+    }
+
+    // Bar height: raw count or probability density (area sums to 1).
+    auto height = [&](int c) -> float {
+        if (!density) return static_cast<float>(c);
+        return static_cast<float>(c) / (static_cast<float>(n) * binW);
+    };
+
+    std::vector<float> verts;
+    verts.reserve(static_cast<std::size_t>(bins) * 12);
+    // Tiny gap between bars for visual separation (matplotlib uses rwidth).
+    const float gap = binW * 0.02f;
+    for (int b = 0; b < bins; ++b) {
+        float x0 = lo + static_cast<float>(b) * binW + gap;
+        float x1 = lo + static_cast<float>(b + 1) * binW - gap;
+        appendQuad(verts, x0, 0.0f, x1, height(counts[static_cast<std::size_t>(b)]));
+    }
+    addFillSeries(verts, style);
+}
+
+void PlotView::barImpl(std::span<const float> positions,
+                       std::span<const float> sizes,
+                       float width, bool horizontal, const PlotStyle& style) {
+    const int n = static_cast<int>(std::min(positions.size(), sizes.size()));
+    if (n == 0) return;
+
+    const float half = width * 0.5f;
+    std::vector<float> verts;
+    verts.reserve(static_cast<std::size_t>(n) * 12);
+    for (int i = 0; i < n; ++i) {
+        float p = positions[static_cast<std::size_t>(i)];
+        float s = sizes[static_cast<std::size_t>(i)];
+        if (horizontal)
+            appendQuad(verts, 0.0f, p - half, s, p + half);
+        else
+            appendQuad(verts, p - half, 0.0f, p + half, s);
+    }
+    addFillSeries(verts, style);
+}
+
+void PlotView::fillBetweenImpl(std::span<const float> x,
+                               std::span<const float> y0,
+                               std::span<const float> y1,
+                               const PlotStyle& style) {
+    const int n = static_cast<int>(std::min({x.size(), y0.size(), y1.size()}));
+    if (n < 2) return;
+
+    std::vector<float> verts;
+    verts.reserve(static_cast<std::size_t>(n - 1) * 12);
+    for (int i = 0; i < n - 1; ++i) {
+        float xa = x[static_cast<std::size_t>(i)];
+        float xb = x[static_cast<std::size_t>(i + 1)];
+        float a0 = y0[static_cast<std::size_t>(i)],     a1 = y1[static_cast<std::size_t>(i)];
+        float b0 = y0[static_cast<std::size_t>(i + 1)], b1 = y1[static_cast<std::size_t>(i + 1)];
+        // Quad (xa,a0)-(xb,b0)-(xb,b1)-(xa,a1) as two triangles.
+        verts.insert(verts.end(), {
+            xa, a0,  xb, b0,  xb, b1,
+            xa, a0,  xb, b1,  xa, a1,
+        });
+    }
+    PlotStyle s = style;
+    if (s.opacity >= 1.0f && !s.color) s.opacity = 0.4f; // translucent band by default
+    addFillSeries(verts, s);
+}
+
+void PlotView::stepImpl(std::span<const float> x, std::span<const float> y,
+                        const PlotStyle& style) {
+    const int n = static_cast<int>(std::min(x.size(), y.size()));
+    if (n == 0) return;
+    // Expand to a piecewise-constant polyline: (x0,y0)-(x1,y0)-(x1,y1)-...
+    std::vector<float> xs, ys;
+    xs.reserve(static_cast<std::size_t>(n) * 2);
+    ys.reserve(static_cast<std::size_t>(n) * 2);
+    for (int i = 0; i < n; ++i) {
+        if (i > 0) {  // horizontal tread to the new x at the previous y
+            xs.push_back(x[static_cast<std::size_t>(i)]);
+            ys.push_back(y[static_cast<std::size_t>(i - 1)]);
+        }
+        xs.push_back(x[static_cast<std::size_t>(i)]);
+        ys.push_back(y[static_cast<std::size_t>(i)]);
+    }
+    addSeriesImpl(static_cast<int>(SeriesKind::Line),
+                  {xs.data(), xs.size()}, {ys.data(), ys.size()}, style);
+}
+
+void PlotView::errorbarImpl(std::span<const float> x, std::span<const float> y,
+                            std::span<const float> yerr, const PlotStyle& style) {
+    const int n = static_cast<int>(std::min({x.size(), y.size(), yerr.size()}));
+    if (n == 0) return;
+
+    // Whisker thickness / cap width as a fraction of the data x-range.
+    float xlo = x[0], xhi = x[0];
+    for (int i = 0; i < n; ++i) { xlo = std::min(xlo, x[static_cast<std::size_t>(i)]);
+                                  xhi = std::max(xhi, x[static_cast<std::size_t>(i)]); }
+    float xspan = std::max(xhi - xlo, 1e-6f);
+    const float stemHalf = xspan * 0.0015f;  // half-thickness of the vertical stem
+    const float capHalf  = xspan * 0.010f;   // half-width of the end caps
+    const float capThick = xspan * 0.0015f;
+
+    std::vector<float> verts;
+    verts.reserve(static_cast<std::size_t>(n) * 36);
+    for (int i = 0; i < n; ++i) {
+        float xi = x[static_cast<std::size_t>(i)];
+        float yi = y[static_cast<std::size_t>(i)];
+        float ei = std::abs(yerr[static_cast<std::size_t>(i)]);
+        appendQuad(verts, xi - stemHalf, yi - ei, xi + stemHalf, yi + ei);   // vertical stem
+        appendQuad(verts, xi - capHalf, yi + ei - capThick, xi + capHalf, yi + ei + capThick); // top cap
+        appendQuad(verts, xi - capHalf, yi - ei - capThick, xi + capHalf, yi - ei + capThick); // bottom cap
+    }
+    addFillSeries(verts, style);
 }
 
 void PlotView::setPointCloudData(std::span<const float> data,
@@ -1589,6 +1769,22 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->pointPipeline->setTargetBlends({alphaBlend()});
     d->pointPipeline->create();
 
+    // ── Fill pipeline (Triangles, no depth, alpha blend) ───────────
+    // Reuses the line2d shaders (uniform mvp + colour, vec2 input) to draw
+    // filled 2D geometry: bars, histogram, area fills, error-bar caps.
+    d->fillPipeline.reset(r->newGraphicsPipeline());
+    d->fillPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
+    d->fillPipeline->setShaderStages({
+        {QRhiShaderStage::Vertex, *lineVs},
+        {QRhiShaderStage::Fragment, *lineFs}
+    });
+    d->fillPipeline->setVertexInputLayout(layout2d);
+    d->fillPipeline->setShaderResourceBindings(d->gridSrb.get());
+    d->fillPipeline->setRenderPassDescriptor(rpDesc);
+    d->fillPipeline->setSampleCount(sc);
+    d->fillPipeline->setTargetBlends({alphaBlend()});
+    d->fillPipeline->create();
+
     // ── 3D Point pipeline (Points, depth enabled) ──────────────────
     d->point3dPipeline.reset(r->newGraphicsPipeline());
     d->point3dPipeline->setTopology(QRhiGraphicsPipeline::Points);
@@ -1920,11 +2116,14 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
     }
 
     // ── Draw 2D series ─────────────────────────────────────────────
-    for (const auto& s : d->series2d) {
-        if (s.vertexCount <= 0) continue;
-
+    // Two passes so filled geometry (bars, histogram, area) renders *under*
+    // line/scatter series, matching matplotlib's z-ordering.
+    auto drawSeries2D = [&](const Series2D& s) {
+        if (s.vertexCount <= 0) return;
         if (s.kind == SeriesKind::Line) {
             cb->setGraphicsPipeline(d->linePipeline.get());
+        } else if (s.kind == SeriesKind::Fill) {
+            cb->setGraphicsPipeline(d->fillPipeline.get());
         } else {
             cb->setGraphicsPipeline(d->pointPipeline.get());
         }
@@ -1932,7 +2131,11 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         const QRhiCommandBuffer::VertexInput vbuf(s.vb, 0);
         cb->setVertexInput(0, 1, &vbuf);
         cb->draw(s.vertexCount);
-    }
+    };
+    for (const auto& s : d->series2d)
+        if (s.kind == SeriesKind::Fill) drawSeries2D(s);
+    for (const auto& s : d->series2d)
+        if (s.kind != SeriesKind::Fill) drawSeries2D(s);
 
     // ── Draw 3D data ───────────────────────────────────────────────
     if (d->mode3d == RenderMode3D::PointCloud) {

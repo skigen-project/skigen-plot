@@ -72,6 +72,69 @@ auto scatterStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     };
 }
 
+auto histStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            std::mt19937 rng(7);
+            std::normal_distribution<float> dist(0.f, 1.f);
+            int n = 2000;
+            Eigen::VectorXf v(n);
+            for (int i = 0; i < n; ++i) v(i) = dist(rng);
+
+            view.clear();
+            view.setTheme(theme);
+            view.setTitle(QStringLiteral("Histogram"));
+            view.setCaption(QStringLiteral("Gaussian sample, Sturges-rule binning"));
+            view.setAxisLabels(QStringLiteral("value"), QStringLiteral("count"));
+            view.hist(v, 30);
+        }
+    };
+}
+
+auto barStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            Eigen::VectorXf x(6), h(6);
+            x << 0, 1, 2, 3, 4, 5;
+            h << 0.32f, 0.18f, 0.27f, 0.09f, 0.08f, 0.06f;
+
+            view.clear();
+            view.setTheme(theme);
+            view.setTitle(QStringLiteral("Bar Chart"));
+            view.setCaption(QStringLiteral("Feature importances (illustrative)"));
+            view.setAxisLabels(QStringLiteral("feature"), QStringLiteral("importance"));
+            view.bar(x, h, 0.7f);
+        }
+    };
+}
+
+auto errorbarStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            constexpr float pi = std::numbers::pi_v<float>;
+            int n = 12;
+            Eigen::VectorXf x = Eigen::VectorXf::LinSpaced(n, 0.f, 2.f * pi);
+            Eigen::VectorXf y = x.array().sin();
+            Eigen::VectorXf err = Eigen::VectorXf::Constant(n, 0.12f);
+            // Shaded confidence band + mean line + error bars.
+            Eigen::VectorXf lo = y.array() - err.array();
+            Eigen::VectorXf hi = y.array() + err.array();
+
+            view.clear();
+            view.setTheme(theme);
+            view.setTitle(QStringLiteral("Error Bars & Confidence Band"));
+            view.setCaption(QStringLiteral("Cross-validation-style score with uncertainty"));
+            view.setAxisLabels(QStringLiteral("x"), QStringLiteral("score"));
+            view.fillBetween(x, lo, hi);
+            view.plot(x, y, {.label = "mean"});
+            view.errorbar(x, y, err);
+        }
+    };
+}
+
 auto pointCloudStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     return {
         std::move(filename),
@@ -159,6 +222,12 @@ int main(int argc, char* argv[]) {
         scatterStep(QStringLiteral("scatter_mpl.png"), Skigen::Plot::Theme::matplotlibStyle()),
         scatterStep(QStringLiteral("scatter_dark.png"), Skigen::Plot::Theme::dark()),
         scatterStep(QStringLiteral("scatter_light.png"), Skigen::Plot::Theme::light()),
+        histStep(QStringLiteral("hist_paper.png"), Skigen::Plot::Theme::paper()),
+        histStep(QStringLiteral("hist_dark.png"), Skigen::Plot::Theme::dark()),
+        barStep(QStringLiteral("bar_paper.png"), Skigen::Plot::Theme::paper()),
+        barStep(QStringLiteral("bar_dark.png"), Skigen::Plot::Theme::dark()),
+        errorbarStep(QStringLiteral("errorbar_paper.png"), Skigen::Plot::Theme::paper()),
+        errorbarStep(QStringLiteral("errorbar_dark.png"), Skigen::Plot::Theme::dark()),
         pointCloudStep(QStringLiteral("point_cloud_paper.png"), Skigen::Plot::Theme::paper()),
         pointCloudStep(QStringLiteral("point_cloud_dark.png"), Skigen::Plot::Theme::dark()),
         meshStep(QStringLiteral("mesh_paper.png"), Skigen::Plot::Theme::paper()),
