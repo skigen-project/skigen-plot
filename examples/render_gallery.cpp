@@ -135,25 +135,31 @@ auto errorbarStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     };
 }
 
-auto heatmapStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+auto heatmapStep(QString filename, Skigen::Plot::Theme theme,
+                 Skigen::Plot::Colormap cmap = Skigen::Plot::Colormap::Viridis,
+                 QString cmapName = QStringLiteral("viridis")) -> RenderStep {
     return {
         std::move(filename),
-        [theme](Skigen::Plot::PlotView& view) {
-            // A 5x5 "confusion-matrix"-like field: strong diagonal + noise.
-            int n = 5;
+        [theme, cmap, cmapName](Skigen::Plot::PlotView& view) {
+            // A smooth 2-D field (Gaussian bump) sampled on a 24x24 grid so
+            // the colormap gradient is clearly visible.
+            int n = 24;
             Eigen::MatrixXf m(n, n);
             for (int r = 0; r < n; ++r)
-                for (int c = 0; c < n; ++c)
-                    m(r, c) = (r == c) ? 0.85f + 0.03f * static_cast<float>(r)
-                                       : 0.04f * static_cast<float>((r * 3 + c) % 4);
+                for (int c = 0; c < n; ++c) {
+                    float x = (static_cast<float>(c) - n * 0.5f) / (n * 0.32f);
+                    float y = (static_cast<float>(r) - n * 0.5f) / (n * 0.32f);
+                    m(r, c) = std::exp(-(x * x + y * y));
+                }
 
             view.clear();
             view.setTheme(theme);
             view.setGridVisible(false);
+            view.setAxisArrowsVisible(false);  // image plots use plain spines
             view.setTitle(QStringLiteral("Heatmap (imshow)"));
-            view.setCaption(QStringLiteral("Confusion-matrix-style field, viridis colormap"));
-            view.setAxisLabels(QStringLiteral("predicted"), QStringLiteral("true"));
-            view.imshow(m, Skigen::Plot::Colormap::Viridis);
+            view.setCaption(QStringLiteral("Gaussian field, %1 colormap").arg(cmapName));
+            view.setAxisLabels(QStringLiteral("x"), QStringLiteral("y"));
+            view.imshow(m, cmap);
         }
     };
 }
@@ -253,6 +259,10 @@ int main(int argc, char* argv[]) {
         errorbarStep(QStringLiteral("errorbar_dark.png"), Skigen::Plot::Theme::dark()),
         heatmapStep(QStringLiteral("heatmap_paper.png"), Skigen::Plot::Theme::paper()),
         heatmapStep(QStringLiteral("heatmap_dark.png"), Skigen::Plot::Theme::dark()),
+        heatmapStep(QStringLiteral("heatmap_jet.png"), Skigen::Plot::Theme::paper(),
+                    Skigen::Plot::Colormap::Jet, QStringLiteral("jet")),
+        heatmapStep(QStringLiteral("heatmap_hot.png"), Skigen::Plot::Theme::dark(),
+                    Skigen::Plot::Colormap::Hot, QStringLiteral("hot")),
         pointCloudStep(QStringLiteral("point_cloud_paper.png"), Skigen::Plot::Theme::paper()),
         pointCloudStep(QStringLiteral("point_cloud_dark.png"), Skigen::Plot::Theme::dark()),
         meshStep(QStringLiteral("mesh_paper.png"), Skigen::Plot::Theme::paper()),

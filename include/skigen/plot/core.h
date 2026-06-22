@@ -89,6 +89,10 @@ enum class Colormap {
     Plasma,    ///< Perceptually-uniform sequential, purple→yellow.
     Gray,      ///< Linear grayscale.
     Coolwarm,  ///< Diverging blue→white→red (centred data).
+    Jet,       ///< MATLAB classic blue→cyan→yellow→red (rainbow).
+    Hot,       ///< MATLAB classic black→red→yellow→white.
+    Cool,      ///< MATLAB classic cyan→magenta.
+    Bone,      ///< MATLAB classic blue-tinted grayscale.
 };
 
 /// @brief Sample @p map at normalised position @p t (clamped to [0, 1]),

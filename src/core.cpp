@@ -55,6 +55,62 @@ auto interpAnchors(const std::array<Eigen::Vector3f, N>& anchors, float t)
     return {c.x(), c.y(), c.z(), 1.0f};
 }
 
+// MATLAB-classic colormaps (jet/hot/cool/bone), ported from MNE-CPP's
+// DISPLIB ColorMap fuzzy-set formulation. linearSlope(x, m, b) = m*x + b,
+// clamped to [0, 1]; channels are evaluated analytically (no LUT).
+float linearSlope(float x, float m, float b) {
+    return std::clamp(m * x + b, 0.0f, 1.0f);
+}
+
+Eigen::Vector4f jetColor(float x) {
+    float r, g, bch;
+    // Red
+    if (x < 0.375f) r = 0.0f;
+    else if (x < 0.625f) r = linearSlope(x, 4.0f, -1.5f);
+    else if (x < 0.875f) r = 1.0f;
+    else r = linearSlope(x, -4.0f, 4.5f);
+    // Green
+    if (x < 0.125f) g = 0.0f;
+    else if (x < 0.375f) g = linearSlope(x, 4.0f, -0.5f);
+    else if (x < 0.625f) g = 1.0f;
+    else if (x < 0.875f) g = linearSlope(x, -4.0f, 3.5f);
+    else g = 0.0f;
+    // Blue
+    if (x < 0.125f) bch = linearSlope(x, 4.0f, 0.5f);
+    else if (x < 0.375f) bch = 1.0f;
+    else if (x < 0.625f) bch = linearSlope(x, -4.0f, 2.5f);
+    else bch = 0.0f;
+    return {r, g, bch, 1.0f};
+}
+
+Eigen::Vector4f hotColor(float x) {
+    float r = (x < 0.375f) ? linearSlope(x, 2.5621f, 0.0392f) : 1.0f;
+    float g;
+    if (x < 0.375f) g = 0.0f;
+    else if (x < 0.75f) g = linearSlope(x, 2.6667f, -1.0f);
+    else g = 1.0f;
+    float bch = (x < 0.75f) ? 0.0f : linearSlope(x, 4.0f, -3.0f);
+    return {r, g, bch, 1.0f};
+}
+
+Eigen::Vector4f coolColor(float x) {
+    return {linearSlope(x, 1.0f, 0.0f), linearSlope(x, -1.0f, 1.0f), 1.0f, 1.0f};
+}
+
+Eigen::Vector4f boneColor(float x) {
+    float r, g, bch;
+    if (x < 0.375f) r = linearSlope(x, 0.8471f, 0.0f);
+    else if (x < 0.75f) r = linearSlope(x, 0.8889f, -0.0157f);
+    else r = linearSlope(x, 1.396f, -0.396f);
+    if (x < 0.375f) g = linearSlope(x, 0.8471f, 0.0f);
+    else if (x < 0.75f) g = linearSlope(x, 1.2237f, -0.1413f);
+    else g = linearSlope(x, 0.894f, 0.106f);
+    if (x < 0.375f) bch = linearSlope(x, 1.1712f, 0.0039f);
+    else if (x < 0.75f) bch = linearSlope(x, 0.8889f, 0.1098f);
+    else bch = linearSlope(x, 0.8941f, 0.1059f);
+    return {r, g, bch, 1.0f};
+}
+
 } // namespace
 
 auto sampleColormap(Colormap map, float t) -> Eigen::Vector4f {
@@ -91,6 +147,10 @@ auto sampleColormap(Colormap map, float t) -> Eigen::Vector4f {
             }};
             return interpAnchors(a, t);
         }
+        case Colormap::Jet:  return jetColor(std::clamp(t, 0.0f, 1.0f));
+        case Colormap::Hot:  return hotColor(std::clamp(t, 0.0f, 1.0f));
+        case Colormap::Cool: return coolColor(std::clamp(t, 0.0f, 1.0f));
+        case Colormap::Bone: return boneColor(std::clamp(t, 0.0f, 1.0f));
         case Colormap::Gray:
         default: {
             float g = std::clamp(t, 0.0f, 1.0f);

@@ -389,9 +389,25 @@ void test_colormap_endpoints_and_clamp() {
     auto g1 = sampleColormap(Colormap::Gray, 1.0f);
     ASSERT_NEAR(g0.x(), 0.0f, 1e-6f);
     ASSERT_NEAR(g1.x(), 1.0f, 1e-6f);
+    // Jet endpoints: t=0 -> blue, t=1 -> red (MATLAB classic).
+    auto jet0 = sampleColormap(Colormap::Jet, 0.0f);
+    auto jet1 = sampleColormap(Colormap::Jet, 1.0f);
+    ASSERT_TRUE(jet0.z() > 0.4f && jet0.x() < 0.1f);  // blue-ish
+    ASSERT_TRUE(jet1.x() > 0.4f && jet1.z() < 0.1f);  // red-ish
+    // Cool: t=0 -> cyan (g=1, b=1), t=1 -> magenta (r=1, b=1).
+    auto cool0 = sampleColormap(Colormap::Cool, 0.0f);
+    ASSERT_NEAR(cool0.y(), 1.0f, 1e-5f);
+    ASSERT_NEAR(cool0.z(), 1.0f, 1e-5f);
+    // Hot: t=1 -> white.
+    auto hot1 = sampleColormap(Colormap::Hot, 1.0f);
+    ASSERT_NEAR(hot1.x(), 1.0f, 1e-5f);
+    ASSERT_NEAR(hot1.y(), 1.0f, 1e-5f);
+    ASSERT_NEAR(hot1.z(), 1.0f, 1e-5f);
+
     // All maps return opaque colours within [0, 1] and clamp out-of-range t.
     for (auto cm : {Colormap::Viridis, Colormap::Magma, Colormap::Plasma,
-                    Colormap::Coolwarm, Colormap::Gray}) {
+                    Colormap::Coolwarm, Colormap::Gray, Colormap::Jet,
+                    Colormap::Hot, Colormap::Cool, Colormap::Bone}) {
         auto lo = sampleColormap(cm, -5.0f);
         auto hi = sampleColormap(cm, 5.0f);
         auto mid = sampleColormap(cm, 0.5f);
