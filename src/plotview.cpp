@@ -153,6 +153,11 @@ struct PlotView::Impl {
     int gridVertexCapacity = 0;
     bool gridDirty = false;
 
+    // Last render-target size in pixels — used to size 2D axis arrowheads
+    // consistently in screen space across both axes.
+    float viewportW = 1.f;
+    float viewportH = 1.f;
+
     // Grid uniform buffers
     std::unique_ptr<QRhiBuffer> gridUniformBuffer;
     std::unique_ptr<QRhiBuffer> axisUniformBuffer;
@@ -930,13 +935,25 @@ void PlotView::computeGridVertices() {
     d->axisVertices.push_back(xlo); d->axisVertices.push_back(yhi);
 
     if (d->showAxisArrows) {
-        float arrowX = (xhi - xlo) * 0.018f;
-        float arrowY = (yhi - ylo) * 0.018f;
-
         auto appendLine2D = [&](float ax, float ay, float bx, float by) {
             d->axisVertices.push_back(ax); d->axisVertices.push_back(ay);
             d->axisVertices.push_back(bx); d->axisVertices.push_back(by);
         };
+
+        // Arrowheads must look identical across both axes, i.e. share the
+        // same length and apex angle in *screen* (pixel) space. The data
+        // ranges and the widget aspect differ per axis, so convert a fixed
+        // pixel length/half-width into data units separately for each axis.
+        // Data->pixel scale: 1 data-unit-x -> (W / xRange) px (the ortho
+        // projection maps the data range to NDC [-1,1], NDC maps to the
+        // viewport), and likewise 1 data-unit-y -> (H / yRange) px.
+        const float xRange = std::max(1e-12f, xhi - xlo);
+        const float yRange = std::max(1e-12f, yhi - ylo);
+        const float dataPerPxX = xRange / d->viewportW;
+        const float dataPerPxY = yRange / d->viewportH;
+
+        constexpr float kArrowLenPx = 13.0f;       // tip-to-base length
+        constexpr float kArrowHalfWidthPx = 5.0f;  // half of the base width
 
         // Solid (filled) arrowheads: the grid/axis pipeline draws line
         // segments only, so fill each triangular head with a fan of
@@ -953,15 +970,19 @@ void PlotView::computeGridVertices() {
             }
         };
 
-        float xArrowHalfHeight = arrowY * 0.24f;
+        // X-axis arrow (points +x): length along x, half-width along y.
+        const float xHeadLen = kArrowLenPx * dataPerPxX;
+        const float xHeadHalf = kArrowHalfWidthPx * dataPerPxY;
         fillArrow2D(xhi, ylo,
-                    xhi - arrowX, ylo - xArrowHalfHeight,
-                    xhi - arrowX, ylo + xArrowHalfHeight);
+                    xhi - xHeadLen, ylo - xHeadHalf,
+                    xhi - xHeadLen, ylo + xHeadHalf);
 
-        float yArrowHalfWidth = arrowX * 0.24f;
+        // Y-axis arrow (points +y): length along y, half-width along x.
+        const float yHeadLen = kArrowLenPx * dataPerPxY;
+        const float yHeadHalf = kArrowHalfWidthPx * dataPerPxX;
         fillArrow2D(xlo, yhi,
-                    xlo - yArrowHalfWidth, yhi - arrowY,
-                    xlo + yArrowHalfWidth, yhi - arrowY);
+                    xlo - yHeadHalf, yhi - yHeadLen,
+                    xlo + yHeadHalf, yhi - yHeadLen);
     }
 
     float txLen = (yhi - ylo) * 0.010f;
@@ -1658,6 +1679,9 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                                const QSize& sz) {
     auto* r = rhi();
     bool is2D = d->has2D() && !d->has3D();
+
+    d->viewportW = std::max(1.0f, static_cast<float>(sz.width()));
+    d->viewportH = std::max(1.0f, static_cast<float>(sz.height()));
 
     // ── Prepare grid (2D only) ─────────────────────────────────────
     if (is2D && d->gridDirty)
