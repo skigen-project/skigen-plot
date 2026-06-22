@@ -220,6 +220,57 @@ public:
                      levels, cmap);
     }
 
+    // ── 2D violin plot (KDE density per group) ──────────────────────
+
+    /// @brief Draw a violin (mirrored Gaussian-KDE density) for each group in
+    ///   @p groups, placed at integer positions 0, 1, 2, …
+    void violinplot(const std::vector<Eigen::VectorXf>& groups,
+                    const PlotStyle& style = {});
+
+    // ── 2D quiver (vector field) ────────────────────────────────────
+
+    /// @brief Draw arrows at (@p x, @p y) with components (@p u, @p v).
+    template <typename DX, typename DY, typename DU, typename DV>
+    void quiver(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
+                const Eigen::MatrixBase<DU>& u, const Eigen::MatrixBase<DV>& v,
+                const PlotStyle& style = {})
+    {
+        Eigen::VectorXf xf = x.derived().template cast<float>().eval();
+        Eigen::VectorXf yf = y.derived().template cast<float>().eval();
+        Eigen::VectorXf uf = u.derived().template cast<float>().eval();
+        Eigen::VectorXf vf = v.derived().template cast<float>().eval();
+        quiverImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                   {yf.data(), static_cast<std::size_t>(yf.size())},
+                   {uf.data(), static_cast<std::size_t>(uf.size())},
+                   {vf.data(), static_cast<std::size_t>(vf.size())}, style);
+    }
+
+    // ── 2D hexbin (hexagonally-binned density) ──────────────────────
+
+    /// @brief Hexagonally bin points (@p x, @p y) into a @p gridsize-wide grid
+    ///   and colour each hexagon by its count using @p cmap.
+    template <typename DX, typename DY>
+    void hexbin(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
+                int gridsize = 20, Colormap cmap = Colormap::Viridis)
+    {
+        Eigen::VectorXf xf = x.derived().template cast<float>().eval();
+        Eigen::VectorXf yf = y.derived().template cast<float>().eval();
+        hexbinImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                   {yf.data(), static_cast<std::size_t>(yf.size())},
+                   gridsize, cmap);
+    }
+
+    // ── 2D pie chart ────────────────────────────────────────────────
+
+    /// @brief Draw proportional wedges for @p values (normalised to their sum),
+    ///   starting at the top and proceeding clockwise.
+    template <typename Derived>
+    void pie(const Eigen::MatrixBase<Derived>& values)
+    {
+        Eigen::VectorXf vf = values.derived().template cast<float>().eval();
+        pieImpl({vf.data(), static_cast<std::size_t>(vf.size())});
+    }
+
     // ── 3D point cloud (N×3 matrix) ─────────────────────────────────
 
     template <typename Derived>
@@ -275,6 +326,10 @@ public:
     /// @brief Show a vertical colorbar legend for colormapped data (imshow /
     ///   contourf): a colormapped strip with min/mid/max tick labels.
     void setColorbarVisible(bool visible);
+
+    /// @brief When true, 1 data-unit maps to the same pixel length on both
+    ///   axes (keeps circles round — e.g. for pie charts). Default: false.
+    void setAspectEqual(bool equal);
     void setAxisLabels(const QString& xLabel, const QString& yLabel);
     void setAxisLabels(const QString& xLabel, const QString& yLabel, const QString& zLabel);
     void setXAxisLabel(const QString& label);
@@ -337,6 +392,12 @@ private:
                      int levels, const PlotStyle& style);
     void contourfImpl(std::span<const float> data, int rows, int cols,
                       int levels, Colormap cmap);
+    void quiverImpl(std::span<const float> x, std::span<const float> y,
+                    std::span<const float> u, std::span<const float> v,
+                    const PlotStyle& style);
+    void hexbinImpl(std::span<const float> x, std::span<const float> y,
+                    int gridsize, Colormap cmap);
+    void pieImpl(std::span<const float> values);
 
     void setPointCloudData(std::span<const float> data, int vertexCount,
                            const PlotStyle& style);

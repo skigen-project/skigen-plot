@@ -181,6 +181,109 @@ auto boxplotStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     };
 }
 
+auto violinStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            std::mt19937 rng(5);
+            std::vector<Eigen::VectorXf> groups;
+            // Three groups: unimodal, bimodal, skewed.
+            for (int g = 0; g < 3; ++g) {
+                int m = 300;
+                Eigen::VectorXf v(m);
+                if (g == 1) {
+                    std::normal_distribution<float> a(-1.2f, 0.4f), b(1.2f, 0.4f);
+                    for (int i = 0; i < m; ++i) v(i) = (i % 2) ? a(rng) : b(rng);
+                } else {
+                    std::normal_distribution<float> d(static_cast<float>(g) * 0.4f,
+                                                      0.5f + 0.2f * static_cast<float>(g));
+                    for (int i = 0; i < m; ++i) v(i) = d(rng);
+                }
+                groups.push_back(v);
+            }
+
+            view.clear();
+            view.setTheme(theme);
+            view.setTitle(QStringLiteral("Violin Plot"));
+            view.setCaption(QStringLiteral("KDE density — unimodal, bimodal, skewed"));
+            view.setAxisLabels(QStringLiteral("group"), QStringLiteral("value"));
+            view.violinplot(groups);
+        }
+    };
+}
+
+auto quiverStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            int g = 9;
+            int n = g * g;
+            Eigen::VectorXf x(n), y(n), u(n), v(n);
+            int k = 0;
+            for (int j = 0; j < g; ++j)
+                for (int i = 0; i < g; ++i) {
+                    float px = static_cast<float>(i), py = static_cast<float>(j);
+                    x(k) = px; y(k) = py;
+                    // Rotational field around the grid centre.
+                    float cx = px - (g - 1) * 0.5f, cy = py - (g - 1) * 0.5f;
+                    u(k) = -cy * 0.18f; v(k) = cx * 0.18f;
+                    ++k;
+                }
+
+            view.clear();
+            view.setTheme(theme);
+            view.setTitle(QStringLiteral("Quiver (vector field)"));
+            view.setCaption(QStringLiteral("Rotational flow — shaft + arrowhead per sample"));
+            view.setAxisLabels(QStringLiteral("x"), QStringLiteral("y"));
+            view.quiver(x, y, u, v);
+        }
+    };
+}
+
+auto hexbinStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            std::mt19937 rng(99);
+            std::normal_distribution<float> dist(0.f, 1.f);
+            int n = 8000;
+            Eigen::VectorXf x(n), y(n);
+            for (int i = 0; i < n; ++i) {
+                x(i) = dist(rng) + 0.6f * dist(rng);
+                y(i) = dist(rng) - 0.4f * x(i);   // correlated cloud
+            }
+
+            view.clear();
+            view.setTheme(theme);
+            view.setGridVisible(false);
+            view.setAxisArrowsVisible(false);
+            view.setColorbarVisible(true);
+            view.setTitle(QStringLiteral("Hexbin"));
+            view.setCaption(QStringLiteral("Hexagonally-binned 2-D density (8k points)"));
+            view.setAxisLabels(QStringLiteral("x"), QStringLiteral("y"));
+            view.hexbin(x, y, 24, Skigen::Plot::Colormap::Viridis);
+        }
+    };
+}
+
+auto pieStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            Eigen::VectorXf vals(5);
+            vals << 35.f, 25.f, 18.f, 14.f, 8.f;
+
+            view.clear();
+            view.setTheme(theme);
+            view.setGridVisible(false);
+            view.setAxesVisible(false);
+            view.setTitle(QStringLiteral("Pie Chart"));
+            view.setCaption(QStringLiteral("Class composition — proportional wedges"));
+            view.pie(vals);
+        }
+    };
+}
+
 auto contourStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     return {
         std::move(filename),
@@ -344,6 +447,14 @@ int main(int argc, char* argv[]) {
         boxplotStep(QStringLiteral("boxplot_dark.png"), Skigen::Plot::Theme::dark()),
         contourStep(QStringLiteral("contour_paper.png"), Skigen::Plot::Theme::paper()),
         contourStep(QStringLiteral("contour_dark.png"), Skigen::Plot::Theme::dark()),
+        violinStep(QStringLiteral("violin_paper.png"), Skigen::Plot::Theme::paper()),
+        violinStep(QStringLiteral("violin_dark.png"), Skigen::Plot::Theme::dark()),
+        quiverStep(QStringLiteral("quiver_paper.png"), Skigen::Plot::Theme::paper()),
+        quiverStep(QStringLiteral("quiver_dark.png"), Skigen::Plot::Theme::dark()),
+        hexbinStep(QStringLiteral("hexbin_paper.png"), Skigen::Plot::Theme::paper()),
+        hexbinStep(QStringLiteral("hexbin_dark.png"), Skigen::Plot::Theme::dark()),
+        pieStep(QStringLiteral("pie_paper.png"), Skigen::Plot::Theme::paper()),
+        pieStep(QStringLiteral("pie_dark.png"), Skigen::Plot::Theme::dark()),
         heatmapStep(QStringLiteral("heatmap_paper.png"), Skigen::Plot::Theme::paper()),
         heatmapStep(QStringLiteral("heatmap_dark.png"), Skigen::Plot::Theme::dark()),
         heatmapStep(QStringLiteral("heatmap_jet.png"), Skigen::Plot::Theme::paper(),

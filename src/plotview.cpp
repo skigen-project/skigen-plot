@@ -213,6 +213,7 @@ struct PlotView::Impl {
     bool showGrid = true;
     bool showAxes = true;
     bool showAxisArrows = true;
+    bool aspectEqual = false;
     QString title;
     QString caption;
     QString xAxisLabel;
@@ -873,6 +874,175 @@ void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
     }
 }
 
+void PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
+                          const PlotStyle& style) {
+    if (groups.empty()) return;
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
+
+    constexpr int kResolution = 48;     // vertical density samples
+    const float maxHalfWidth = 0.38f;   // max violin half-width in position units
+
+    std::vector<float> verts;
+    std::vector<float> medX, medY;      // median tick markers
+    for (std::size_t g = 0; g < groups.size(); ++g) {
+        const Eigen::VectorXf& gv = groups[g];
+        if (gv.size() == 0) continue;
+        std::vector<float> s(gv.data(), gv.data() + gv.size());
+        std::sort(s.begin(), s.end());
+        const auto n = static_cast<float>(s.size());
+
+        float lo = s.front(), hi = s.back();
+        if (hi <= lo) hi = lo + 1.0f;
+        // Silverman's rule-of-thumb KDE bandwidth.
+        float mean = 0.0f; for (float v : s) mean += v; mean /= n;
+        float var = 0.0f; for (float v : s) var += (v - mean) * (v - mean);
+        float sd = std::sqrt(var / std::max(1.0f, n - 1.0f));
+        float bw = 1.06f * std::max(sd, 1e-6f) * std::pow(n, -0.2f);
+
+        // Evaluate the Gaussian KDE on a vertical grid and find the peak.
+        std::vector<float> dens(kResolution + 1), yv(kResolution + 1);
+        float peak = 0.0f;
+        for (int i = 0; i <= kResolution; ++i) {
+            float y = lo + (hi - lo) * static_cast<float>(i) / kResolution;
+            yv[static_cast<std::size_t>(i)] = y;
+            float acc = 0.0f;
+            for (float xi : s) {
+                float z = (y - xi) / bw;
+                acc += std::exp(-0.5f * z * z);
+            }
+            float d = acc / (n * bw * 2.5066283f); // sqrt(2*pi)
+            dens[static_cast<std::size_t>(i)] = d;
+            peak = std::max(peak, d);
+        }
+        if (peak <= 0.0f) continue;
+
+        float cx = static_cast<float>(g);
+        // Build the symmetric body as a triangle strip of trapezoids.
+        for (int i = 0; i < kResolution; ++i) {
+            float w0 = maxHalfWidth * dens[static_cast<std::size_t>(i)] / peak;
+            float w1 = maxHalfWidth * dens[static_cast<std::size_t>(i + 1)] / peak;
+            float y0 = yv[static_cast<std::size_t>(i)];
+            float y1 = yv[static_cast<std::size_t>(i + 1)];
+            // Quad spanning [cx-w0,cx+w0]@y0 to [cx-w1,cx+w1]@y1.
+            verts.insert(verts.end(), {
+                cx - w0, y0,  cx + w0, y0,  cx + w1, y1,
+                cx - w0, y0,  cx + w1, y1,  cx - w1, y1,
+            });
+        }
+        // Median marker.
+        float med = s[s.size() / 2];
+        medX.push_back(cx);
+        medY.push_back(med);
+    }
+
+    PlotStyle vStyle = style;
+    if (vStyle.opacity >= 1.0f && !vStyle.color)
+        vStyle.opacity = 0.6f;
+    addFillSeries(verts, vStyle);
+
+    if (!medX.empty()) {
+        PlotStyle medStyle = style;
+        medStyle.pointSize = 5.0f;
+        addSeriesImpl(static_cast<int>(SeriesKind::Scatter),
+                      {medX.data(), medX.size()}, {medY.data(), medY.size()}, medStyle);
+    }
+}
+
+void PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
+                          std::span<const float> u, std::span<const float> v,
+                          const PlotStyle& style) {
+    const int n = static_cast<int>(std::min({x.size(), y.size(), u.size(), v.size()}));
+    if (n == 0) return;
+
+    // Shaft thickness / arrowhead size as a fraction of the mean vector length.
+    float meanLen = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        float ui = u[static_cast<std::size_t>(i)], vi = v[static_cast<std::size_t>(i)];
+        meanLen += std::sqrt(ui * ui + vi * vi);
+    }
+    meanLen = std::max(meanLen / static_cast<float>(n), 1e-6f);
+    const float shaftHalf = meanLen * 0.04f;
+    const float headLen = meanLen * 0.30f;
+    const float headHalf = meanLen * 0.16f;
+
+    std::vector<float> verts;
+    verts.reserve(static_cast<std::size_t>(n) * 18);
+    for (int i = 0; i < n; ++i) {
+        float px = x[static_cast<std::size_t>(i)], py = y[static_cast<std::size_t>(i)];
+        float ux = u[static_cast<std::size_t>(i)], uy = v[static_cast<std::size_t>(i)];
+        float len = std::sqrt(ux * ux + uy * uy);
+        if (len < 1e-9f) continue;
+        float dx = ux / len, dy = uy / len;     // unit direction
+        float nx = -dy, ny = dx;                 // unit normal
+        float tipX = px + ux, tipY = py + uy;
+        float baseX = tipX - dx * headLen, baseY = tipY - dy * headLen;
+        // Shaft as a thin quad from origin to the head base.
+        verts.insert(verts.end(), {
+            px + nx * shaftHalf, py + ny * shaftHalf,
+            px - nx * shaftHalf, py - ny * shaftHalf,
+            baseX - nx * shaftHalf, baseY - ny * shaftHalf,
+            px + nx * shaftHalf, py + ny * shaftHalf,
+            baseX - nx * shaftHalf, baseY - ny * shaftHalf,
+            baseX + nx * shaftHalf, baseY + ny * shaftHalf,
+        });
+        // Arrowhead triangle.
+        verts.insert(verts.end(), {
+            tipX, tipY,
+            baseX + nx * headHalf, baseY + ny * headHalf,
+            baseX - nx * headHalf, baseY - ny * headHalf,
+        });
+    }
+    addFillSeries(verts, style);
+}
+
+void PlotView::pieImpl(std::span<const float> values) {
+    const int n = static_cast<int>(values.size());
+    if (n == 0) return;
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
+
+    float total = 0.0f;
+    for (float v : values) total += std::max(0.0f, v);
+    if (total <= 0.0f) return;
+
+    constexpr float pi = 3.14159265358979323846f;
+    constexpr int kArcSteps = 48;       // arc tessellation per full circle
+    const float radius = 1.0f;
+    const float cx = 0.0f, cy = 0.0f;
+
+    // Each wedge becomes its own Fill series so it picks up a palette colour.
+    float angle = pi * 0.5f;            // start at the top
+    for (int i = 0; i < n; ++i) {
+        float frac = std::max(0.0f, values[static_cast<std::size_t>(i)]) / total;
+        float sweep = frac * 2.0f * pi;
+        int steps = std::max(1, static_cast<int>(std::ceil(frac * kArcSteps)));
+        float a0 = angle;
+        std::vector<float> verts;
+        verts.reserve(static_cast<std::size_t>(steps) * 6);
+        for (int s = 0; s < steps; ++s) {
+            float t0 = a0 - sweep * static_cast<float>(s) / steps;       // clockwise
+            float t1 = a0 - sweep * static_cast<float>(s + 1) / steps;
+            verts.insert(verts.end(), {
+                cx, cy,
+                cx + radius * std::cos(t0), cy + radius * std::sin(t0),
+                cx + radius * std::cos(t1), cy + radius * std::sin(t1),
+            });
+        }
+        addFillSeries(verts, {});
+        angle -= sweep;
+    }
+
+    // Square the data bounds and force equal aspect so the pie stays round.
+    BoundingBox2D bb;
+    bb.min = Eigen::Vector2f(-radius * 1.15f, -radius * 1.15f);
+    bb.max = Eigen::Vector2f(radius * 1.15f, radius * 1.15f);
+    d->bounds2d = d->bounds2d.merge(bb);
+    d->aspectEqual = true;
+    d->gridDirty = true;
+    update();
+}
+
 void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
                           Colormap cmap, float vmin, float vmax) {
     if (rows <= 0 || cols <= 0) return;
@@ -1104,6 +1274,106 @@ void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
     update();
 }
 
+void PlotView::hexbinImpl(std::span<const float> x, std::span<const float> y,
+                          int gridsize, Colormap cmap) {
+    const int n = static_cast<int>(std::min(x.size(), y.size()));
+    if (n == 0) return;
+    gridsize = std::max(2, gridsize);
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
+
+    float xlo = x[0], xhi = x[0], ylo = y[0], yhi = y[0];
+    for (int i = 0; i < n; ++i) {
+        xlo = std::min(xlo, x[static_cast<std::size_t>(i)]);
+        xhi = std::max(xhi, x[static_cast<std::size_t>(i)]);
+        ylo = std::min(ylo, y[static_cast<std::size_t>(i)]);
+        yhi = std::max(yhi, y[static_cast<std::size_t>(i)]);
+    }
+    float xrange = std::max(xhi - xlo, 1e-6f);
+    float yrange = std::max(yhi - ylo, 1e-6f);
+
+    // Pointy-top hex grid with horizontal spacing dx and vertical spacing dy.
+    const float dx = xrange / static_cast<float>(gridsize);
+    const float radius = dx / std::sqrt(3.0f);   // hexagon circumradius
+    const float dyRow = radius * 1.5f;            // vertical row spacing
+    const int rows = std::max(2, static_cast<int>(std::ceil(yrange / dyRow)) + 1);
+
+    // Bin: assign each point to the nearest hex centre (offset rows).
+    std::vector<int> counts(static_cast<std::size_t>(gridsize + 1) *
+                            static_cast<std::size_t>(rows + 1), 0);
+    auto idx = [&](int c, int r) { return static_cast<std::size_t>(r) *
+                                          static_cast<std::size_t>(gridsize + 1) +
+                                          static_cast<std::size_t>(c); };
+    auto cellCenter = [&](int c, int r) -> std::pair<float, float> {
+        float ox = (r & 1) ? dx * 0.5f : 0.0f;     // offset odd rows
+        return {xlo + dx * static_cast<float>(c) + ox,
+                ylo + dyRow * static_cast<float>(r)};
+    };
+
+    int maxCount = 0;
+    for (int i = 0; i < n; ++i) {
+        float px = x[static_cast<std::size_t>(i)], py = y[static_cast<std::size_t>(i)];
+        int r = std::clamp(static_cast<int>(std::round((py - ylo) / dyRow)), 0, rows);
+        float ox = (r & 1) ? dx * 0.5f : 0.0f;
+        int c = std::clamp(static_cast<int>(std::round((px - xlo - ox) / dx)), 0, gridsize);
+        int& cnt = counts[idx(c, r)];
+        cnt++;
+        maxCount = std::max(maxCount, cnt);
+    }
+    if (maxCount == 0) return;
+
+    // Emit a coloured hexagon for every non-empty bin.
+    auto& verts = d->heatmapVertices;
+    verts.clear();
+    constexpr float pi = 3.14159265358979323846f;
+    for (int r = 0; r <= rows; ++r) {
+        for (int c = 0; c <= gridsize; ++c) {
+            int cnt = counts[idx(c, r)];
+            if (cnt == 0) continue;
+            auto [hx, hy] = cellCenter(c, r);
+            float t = static_cast<float>(cnt) / static_cast<float>(maxCount);
+            Eigen::Vector4f col = sampleColormap(cmap, t);
+            // Pointy-top hexagon: 6 triangles fanning from the centre.
+            float prevX = 0, prevY = 0;
+            for (int k = 0; k <= 6; ++k) {
+                float a = pi / 6.0f + pi / 3.0f * static_cast<float>(k);
+                float vx = hx + radius * std::cos(a);
+                float vy = hy + radius * std::sin(a);
+                if (k > 0) {
+                    verts.insert(verts.end(), {
+                        hx, hy, col.x(), col.y(), col.z(), col.w(),
+                        prevX, prevY, col.x(), col.y(), col.z(), col.w(),
+                        vx, vy, col.x(), col.y(), col.z(), col.w(),
+                    });
+                }
+                prevX = vx; prevY = vy;
+            }
+        }
+    }
+    d->heatmapVertexCount = static_cast<int>(verts.size() / 6);
+    d->hasHeatmap = true;
+    d->heatmapDirty = true;
+    d->hasColormappedData = true;
+    d->colorbarMap = cmap;
+    d->colorbarVmin = 0.0f;
+    d->colorbarVmax = static_cast<float>(maxCount);
+
+    BoundingBox2D bb;
+    bb.min = Eigen::Vector2f(xlo - dx, ylo - dyRow);
+    bb.max = Eigen::Vector2f(xhi + dx, yhi + dyRow);
+    d->bounds2d = d->bounds2d.merge(bb);
+
+    if (d->pipelineReady) {
+        auto* rr = rhi();
+        int floats = std::max(static_cast<int>(verts.size()), 1);
+        d->heatmapBuffer = makeDynBuf(rr, QRhiBuffer::VertexBuffer,
+                                      quint32(floats * sizeof(float)));
+        d->heatmapCapacity = floats;
+    }
+    d->gridDirty = true;
+    update();
+}
+
 void PlotView::setPointCloudData(std::span<const float> data,
                                   int vertexCount,
                                   const PlotStyle& style) {
@@ -1208,6 +1478,7 @@ void PlotView::clear() {
     d->heatmapVertexCount = 0;
     d->heatmapBuffer.reset();
     d->hasColormappedData = false;
+    d->aspectEqual = false;
     d->hasContour = false;
     d->contourVertices.clear();
     d->contourVertexCount = 0;
@@ -1301,6 +1572,12 @@ void PlotView::setAxisArrowsVisible(bool visible) {
 void PlotView::setColorbarVisible(bool visible) {
     d->showColorbar = visible;
     if (d->textOverlay) d->textOverlay->update();
+    update();
+}
+
+void PlotView::setAspectEqual(bool equal) {
+    d->aspectEqual = equal;
+    d->gridDirty = true;
     update();
 }
 
@@ -2360,10 +2637,33 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
 
     // ── Compute MVP ────────────────────────────────────────────────
     Eigen::Matrix4f mvp;
-    if (is2D)
-        mvp = orthoProjection(d->viewBounds, 0.02f);
-    else
+    if (is2D) {
+        BoundingBox2D projBounds = d->viewBounds;
+        if (d->aspectEqual) {
+            // Expand the shorter data axis so 1 data-unit maps to the same
+            // pixel length on both axes (keeps circles/pies round).
+            QRectF pa = plotAreaFor(sz, !d->title.isEmpty(), !d->caption.isEmpty(),
+                                    !d->xAxisLabel.isEmpty(), !d->yAxisLabel.isEmpty(),
+                                    d->showColorbar && d->hasColormappedData);
+            double paAspect = std::max(1.0, pa.width()) / std::max(1.0, pa.height());
+            float w = projBounds.width(), h = projBounds.height();
+            if (w > 1e-6f && h > 1e-6f) {
+                double dataAspect = static_cast<double>(w) / static_cast<double>(h);
+                if (dataAspect < paAspect) {
+                    float targetW = static_cast<float>(h * paAspect);
+                    float pad = (targetW - w) * 0.5f;
+                    projBounds.min.x() -= pad; projBounds.max.x() += pad;
+                } else {
+                    float targetH = static_cast<float>(w / paAspect);
+                    float pad = (targetH - h) * 0.5f;
+                    projBounds.min.y() -= pad; projBounds.max.y() += pad;
+                }
+            }
+        }
+        mvp = orthoProjection(projBounds, 0.02f);
+    } else {
         mvp = d->camera.viewProjectionMatrix();
+    }
 
     QMatrix4x4 correction = r->clipSpaceCorrMatrix();
     Eigen::Matrix4f corr;
