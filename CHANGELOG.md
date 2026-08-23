@@ -29,6 +29,8 @@ All notable changes to SkigenPlot will be documented in this file.
   histograms; creation fails predictably when no usable values remain.
 - Finite-sample filtering for bars, filled areas, steps, error bars, stems,
   and quiver fields, including grouped stem updates.
+- Shape, finite-coordinate, and index-range validation for 3D point clouds
+  and triangle meshes.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

@@ -93,6 +93,10 @@ areas omit segments with invalid endpoints. Histograms ignore non-finite
 observations when computing ranges, counts, and density. Creation returns an
 invalid handle when no usable data remains.
 
+Point clouds accept finite `N x 3` matrices. Meshes additionally require an
+`M x 3` triangle-index matrix with every index in the vertex range. Invalid 3D
+input is a deterministic no-op and does not replace the current scene.
+
 A stem plot's vertical geometry and marker tips share one handle. Data, style,
 visibility, and removal operations therefore apply to the complete composite.
 

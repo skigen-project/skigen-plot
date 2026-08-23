@@ -198,6 +198,20 @@ int main(int argc, char* argv[])
     if (view.errorbar(empty, y, x) || view.quiver(x, empty, y, x))
         return 25;
 
+    Skigen::Plot::PlotView invalid3DView;
+    Eigen::MatrixXf invalidVertices(2, 2);
+    invalidVertices.setZero();
+    invalid3DView.pointCloud(invalidVertices);
+    Eigen::MatrixXf validVertices(3, 3);
+    validVertices << 0.0f, 0.0f, 0.0f,
+                     1.0f, 0.0f, 0.0f,
+                     0.0f, 1.0f, 0.0f;
+    Eigen::MatrixXi invalidIndices(1, 3);
+    invalidIndices << 0, 1, 3;
+    invalid3DView.mesh(validVertices, invalidIndices);
+    if (invalid3DView.is3DView())
+        return 38;
+
     const auto stems = view.stem(x, y, {.label = "stems"});
     if (!stems || !view.containsSeries(stems)
         || !view.updateSeriesData(stems, x, updatedY)

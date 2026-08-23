@@ -338,16 +338,22 @@ public:
 
     // ── 3D point cloud (N×3 matrix) ─────────────────────────────────
 
+    /// @brief Replace the 3D scene with finite N-by-3 point coordinates.
+    ///   Empty, non-finite, or incorrectly shaped input leaves the view unchanged.
     template <typename Derived>
     void pointCloud(const Eigen::MatrixBase<Derived>& vertices,
                     const PlotStyle& style = {}) {
         Eigen::MatrixXf vf = vertices.derived().template cast<float>().eval();
+        if (vf.rows() == 0 || vf.cols() != 3 || !vf.allFinite())
+            return;
         setPointCloudData({vf.data(), static_cast<std::size_t>(vf.size())},
                           vf.rows(), style);
     }
 
     // ── 3D mesh (N×3 vertices, M×3 indices) ─────────────────────────
 
+    /// @brief Replace the 3D scene with a finite N-by-3 vertex matrix and an
+    ///   M-by-3 triangle matrix. Invalid shapes or indices leave the view unchanged.
     template <typename DerivedV, typename DerivedI>
     void mesh(const Eigen::MatrixBase<DerivedV>& vertices,
               const Eigen::MatrixBase<DerivedI>& indices,
@@ -356,6 +362,11 @@ public:
         Eigen::MatrixXf vf = vertices.derived().template cast<float>().eval();
         Eigen::Matrix<uint32_t, Eigen::Dynamic, Eigen::Dynamic> idx =
             indices.derived().template cast<uint32_t>().eval();
+        if (vf.rows() == 0 || vf.cols() != 3 || !vf.allFinite()
+            || idx.rows() == 0 || idx.cols() != 3
+            || (idx.array() >= static_cast<uint32_t>(vf.rows())).any()) {
+            return;
+        }
         setMeshData({vf.data(), static_cast<std::size_t>(vf.size())},
                     vf.rows(),
                     {idx.data(), static_cast<std::size_t>(idx.size())},

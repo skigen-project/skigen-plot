@@ -53,6 +53,9 @@ Vector inputs are truncated to the shortest required vector. Non-finite
 samples are discarded by handle-returning 2D plots, while filled areas omit
 segments with invalid endpoints. Histograms ignore non-finite observations.
 Creation returns an invalid handle when no usable data remains.
+Point clouds and meshes require finite `N x 3` vertices. Mesh faces require an
+`M x 3` index matrix whose values refer to existing vertices; invalid 3D input
+leaves the current view unchanged.
 
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,
