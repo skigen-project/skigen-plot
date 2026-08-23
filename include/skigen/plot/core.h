@@ -100,6 +100,21 @@ enum class Colormap {
 SKIGENPLOT_EXPORT
 auto sampleColormap(Colormap map, float t) -> Eigen::Vector4f;
 
+// ── Histogram computation ───────────────────────────────────────────────
+
+struct SKIGENPLOT_EXPORT HistogramResult {
+    std::vector<float> edges;
+    std::vector<float> values;
+    std::size_t finiteCount = 0;
+};
+
+/// @brief Compute uniform histogram bins after omitting non-finite samples.
+///   Values are counts unless @p density is true, in which case their
+///   piecewise-constant integral is 1. Non-positive @p bins use Sturges' rule.
+SKIGENPLOT_EXPORT
+auto computeHistogram(std::span<const float> samples, int bins = 0,
+                      bool density = false) -> HistogramResult;
+
 // ── Orthographic projection (2D data → NDC) ─────────────────────────────
 
 SKIGENPLOT_EXPORT

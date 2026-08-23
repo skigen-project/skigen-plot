@@ -32,6 +32,8 @@ All notable changes to SkigenPlot will be documented in this file.
   rendering for closed shapes.
 - Deterministic finite-data filtering for line, scatter, series updates, and
   histograms; creation fails predictably when no usable values remain.
+- Public `computeHistogram()` data-layer results with reference tests for
+  finite-count conservation, unit-integral density, and constant ranges.
 - Finite-sample filtering for bars, filled areas, steps, error bars, stems,
   and quiver fields, including grouped stem updates.
 - Shape, finite-coordinate, and index-range validation for 3D point clouds

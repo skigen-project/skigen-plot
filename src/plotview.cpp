@@ -1223,44 +1223,17 @@ auto buildStrokeGeometry(std::span<const float> source, float width,
 
 auto PlotView::histImpl(std::span<const float> values, int bins, bool density,
                         const PlotStyle& style) -> SeriesHandle {
-    std::vector<float> finiteValues;
-    finiteValues.reserve(values.size());
-    std::ranges::copy_if(values, std::back_inserter(finiteValues),
-                         [](float value) { return std::isfinite(value); });
-    const int n = static_cast<int>(finiteValues.size());
-    if (n == 0) return {};
-
-    const auto [minIt, maxIt] = std::ranges::minmax_element(finiteValues);
-    float lo = *minIt;
-    float hi = *maxIt;
-    if (hi <= lo) hi = lo + 1.0f;
-
-    // Sturges' rule default: ceil(log2(n)) + 1.
-    if (bins <= 0)
-        bins = std::max(1, static_cast<int>(std::ceil(std::log2(std::max(1, n)) + 1.0)));
-
-    std::vector<int> counts(static_cast<std::size_t>(bins), 0);
-    const float binW = (hi - lo) / static_cast<float>(bins);
-    for (float v : finiteValues) {
-        int b = static_cast<int>((v - lo) / binW);
-        b = std::clamp(b, 0, bins - 1);
-        counts[static_cast<std::size_t>(b)]++;
-    }
-
-    // Bar height: raw count or probability density (area sums to 1).
-    auto height = [&](int c) -> float {
-        if (!density) return static_cast<float>(c);
-        return static_cast<float>(c) / (static_cast<float>(n) * binW);
-    };
+    const auto histogram = computeHistogram(values, bins, density);
+    if (histogram.values.empty()) return {};
 
     std::vector<float> verts;
-    verts.reserve(static_cast<std::size_t>(bins) * 12);
+    verts.reserve(histogram.values.size() * 12);
     // Tiny gap between bars for visual separation (matplotlib uses rwidth).
-    const float gap = binW * 0.02f;
-    for (int b = 0; b < bins; ++b) {
-        float x0 = lo + static_cast<float>(b) * binW + gap;
-        float x1 = lo + static_cast<float>(b + 1) * binW - gap;
-        appendQuad(verts, x0, 0.0f, x1, height(counts[static_cast<std::size_t>(b)]));
+    const float gap = (histogram.edges[1] - histogram.edges[0]) * 0.02f;
+    for (std::size_t bin = 0; bin < histogram.values.size(); ++bin) {
+        const float x0 = histogram.edges[bin] + gap;
+        const float x1 = histogram.edges[bin + 1] - gap;
+        appendQuad(verts, x0, 0.0f, x1, histogram.values[bin]);
     }
     return addFillSeries(verts, style);
 }

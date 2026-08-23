@@ -328,6 +328,45 @@ void test_compute_ticks_degenerate() {
     ASSERT_NEAR(result.ticks[0], 3.f, 1e-6f);
 }
 
+void test_histogram_counts_and_density() {
+    const std::array samples{
+        0.0f, 0.25f, 0.75f, 1.0f,
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity()
+    };
+    const auto counts = Skigen::Plot::computeHistogram(samples, 2);
+    ASSERT_TRUE(counts.finiteCount == 4);
+    ASSERT_TRUE(counts.edges.size() == 3);
+    ASSERT_TRUE(counts.values.size() == 2);
+    ASSERT_NEAR(counts.values[0] + counts.values[1], 4.0f, 1e-6f);
+
+    const auto density = Skigen::Plot::computeHistogram(samples, 2, true);
+    float integral = 0.0f;
+    for (std::size_t bin = 0; bin < density.values.size(); ++bin) {
+        integral += density.values[bin]
+            * (density.edges[bin + 1] - density.edges[bin]);
+    }
+    ASSERT_NEAR(integral, 1.0f, 1e-6f);
+}
+
+void test_histogram_constant_and_invalid_input() {
+    const std::array constant{3.0f, 3.0f, 3.0f};
+    const auto histogram = Skigen::Plot::computeHistogram(constant, 0);
+    ASSERT_TRUE(histogram.finiteCount == constant.size());
+    ASSERT_TRUE(!histogram.values.empty());
+    ASSERT_NEAR(histogram.edges.front(), 3.0f, 1e-6f);
+    ASSERT_NEAR(histogram.edges.back(), 4.0f, 1e-6f);
+
+    const std::array invalid{
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity()
+    };
+    const auto empty = Skigen::Plot::computeHistogram(invalid, 4);
+    ASSERT_TRUE(empty.finiteCount == 0);
+    ASSERT_TRUE(empty.edges.empty());
+    ASSERT_TRUE(empty.values.empty());
+}
+
 // ---------------------------------------------------------------------------
 // Vertex normal tests
 // ---------------------------------------------------------------------------
@@ -512,6 +551,8 @@ int main() {
     run_test("compute_ticks_symmetric",    test_compute_ticks_symmetric);
     run_test("compute_ticks_small_range",  test_compute_ticks_small_range);
     run_test("compute_ticks_degenerate",   test_compute_ticks_degenerate);
+    run_test("histogram_counts_density",   test_histogram_counts_and_density);
+    run_test("histogram_constant_invalid", test_histogram_constant_and_invalid_input);
     run_test("vertex_normals_triangle",    test_vertex_normals_single_triangle);
     run_test("vertex_normals_positions",   test_vertex_normals_preserves_positions);
     run_test("theme_dark",                 test_theme_dark);

@@ -159,6 +159,48 @@ auto sampleColormap(Colormap map, float t) -> Eigen::Vector4f {
     }
 }
 
+// ── Histogram computation ───────────────────────────────────────────────
+
+auto computeHistogram(std::span<const float> samples, int bins, bool density)
+    -> HistogramResult {
+    std::vector<float> finiteSamples;
+    finiteSamples.reserve(samples.size());
+    std::ranges::copy_if(samples, std::back_inserter(finiteSamples),
+                         [](float value) { return std::isfinite(value); });
+
+    HistogramResult result;
+    result.finiteCount = finiteSamples.size();
+    if (finiteSamples.empty())
+        return result;
+
+    const auto [minIt, maxIt] = std::ranges::minmax_element(finiteSamples);
+    const float lo = *minIt;
+    const float hi = *maxIt > lo ? *maxIt : lo + 1.0f;
+    if (bins <= 0) {
+        bins = std::max(
+            1, static_cast<int>(std::ceil(std::log2(finiteSamples.size()) + 1.0)));
+    }
+
+    const float binWidth = (hi - lo) / static_cast<float>(bins);
+    result.edges.resize(static_cast<std::size_t>(bins) + 1);
+    result.values.assign(static_cast<std::size_t>(bins), 0.0f);
+    for (int bin = 0; bin <= bins; ++bin)
+        result.edges[static_cast<std::size_t>(bin)] = lo + bin * binWidth;
+
+    for (float sample : finiteSamples) {
+        int bin = static_cast<int>((sample - lo) / binWidth);
+        bin = std::clamp(bin, 0, bins - 1);
+        result.values[static_cast<std::size_t>(bin)] += 1.0f;
+    }
+    if (density) {
+        const float scale = 1.0f
+            / (static_cast<float>(result.finiteCount) * binWidth);
+        for (float& value : result.values)
+            value *= scale;
+    }
+    return result;
+}
+
 // ── Orthographic projection ──────────────────────────────────────────────
 
 auto orthoProjection(const BoundingBox2D& bounds,
