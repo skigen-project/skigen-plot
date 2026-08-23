@@ -35,6 +35,8 @@ All notable changes to SkigenPlot will be documented in this file.
   or line contours.
 - Finite coordinate filtering for hexbin and safe positive-weight
   normalization for pie charts.
+- Finite sample filtering and all-invalid no-op behavior for box and violin
+  plots.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

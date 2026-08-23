@@ -236,7 +236,8 @@ public:
 
     /// @brief Draw a box-and-whisker for each group in @p groups, placed at
     ///   integer positions 0, 1, 2, … Box spans Q1–Q3, with the median line,
-    ///   1.5·IQR whiskers, and outliers as points.
+    ///   1.5·IQR whiskers, and outliers as points. Non-finite samples and empty
+    ///   groups are omitted; all-invalid input leaves the view unchanged.
     void boxplot(const std::vector<Eigen::VectorXf>& groups,
                  const PlotStyle& style = {});
 
@@ -288,7 +289,8 @@ public:
     // ── 2D violin plot (KDE density per group) ──────────────────────
 
     /// @brief Draw a violin (mirrored Gaussian-KDE density) for each group in
-    ///   @p groups, placed at integer positions 0, 1, 2, …
+    ///   @p groups, placed at integer positions 0, 1, 2, … Non-finite samples
+    ///   and empty groups are omitted; all-invalid input leaves the view unchanged.
     void violinplot(const std::vector<Eigen::VectorXf>& groups,
                     const PlotStyle& style = {});
 

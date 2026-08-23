@@ -60,6 +60,8 @@ Heatmaps and contours derive color ranges from finite cells and omit invalid
 cells. An all-invalid matrix leaves the current view unchanged.
 Hexbin omits non-finite coordinate pairs. Pie charts omit non-finite and
 non-positive weights; an all-invalid input leaves the view unchanged.
+Box and violin plots omit non-finite samples and empty groups while preserving
+the positions of valid groups.
 
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,

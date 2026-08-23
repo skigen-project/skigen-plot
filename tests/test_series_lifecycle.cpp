@@ -243,6 +243,17 @@ int main(int argc, char* argv[])
     if (!pieView.is2DView())
         return 44;
 
+    Skigen::Plot::PlotView statisticsView;
+    const std::vector<Eigen::VectorXf> invalidGroups{invalidValues};
+    statisticsView.boxplot(invalidGroups);
+    statisticsView.violinplot(invalidGroups);
+    if (statisticsView.is2DView())
+        return 45;
+    const std::vector<Eigen::VectorXf> mixedGroups{invalidValues, y};
+    statisticsView.boxplot(mixedGroups);
+    if (!statisticsView.is2DView())
+        return 46;
+
     const auto stems = view.stem(x, y, {.label = "stems"});
     if (!stems || !view.containsSeries(stems)
         || !view.updateSeriesData(stems, x, updatedY)

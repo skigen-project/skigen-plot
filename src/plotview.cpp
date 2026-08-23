@@ -1106,8 +1106,6 @@ auto PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
 void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
                        const PlotStyle& style) {
     if (groups.empty()) return;
-    if (!d->has2D() && !d->has3D())
-        d->interactionTool = InteractionTool::Pan;
 
     const float boxHalf = 0.3f;     // half box width in group-position units
     const float capHalf = 0.15f;    // whisker-cap half width
@@ -1130,7 +1128,12 @@ void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
     const float lineHalf = std::max(static_cast<float>(groups.size()), 1.0f) * 0.004f;
 
     for (std::size_t g = 0; g < groups.size(); ++g) {
-        std::vector<float> s(groups[g].data(), groups[g].data() + groups[g].size());
+        std::vector<float> s;
+        s.reserve(static_cast<std::size_t>(groups[g].size()));
+        for (Eigen::Index i = 0; i < groups[g].size(); ++i) {
+            if (std::isfinite(groups[g][i]))
+                s.push_back(groups[g][i]);
+        }
         if (s.empty()) continue;
         std::sort(s.begin(), s.end());
 
@@ -1169,6 +1172,9 @@ void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
         appendQuad(boxVerts, cx - capHalf, whiskHi - lineHalf, cx + capHalf, whiskHi + lineHalf);
         appendQuad(boxVerts, cx - capHalf, whiskLo - lineHalf, cx + capHalf, whiskLo + lineHalf);
     }
+    if (boxVerts.empty()) return;
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
 
     PlotStyle boxStyle = style;
     if (boxStyle.opacity >= 1.0f && !boxStyle.color)
@@ -1186,8 +1192,6 @@ void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
 void PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
                           const PlotStyle& style) {
     if (groups.empty()) return;
-    if (!d->has2D() && !d->has3D())
-        d->interactionTool = InteractionTool::Pan;
 
     constexpr int kResolution = 48;     // vertical density samples
     const float maxHalfWidth = 0.38f;   // max violin half-width in position units
@@ -1197,7 +1201,13 @@ void PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
     for (std::size_t g = 0; g < groups.size(); ++g) {
         const Eigen::VectorXf& gv = groups[g];
         if (gv.size() == 0) continue;
-        std::vector<float> s(gv.data(), gv.data() + gv.size());
+        std::vector<float> s;
+        s.reserve(static_cast<std::size_t>(gv.size()));
+        for (Eigen::Index i = 0; i < gv.size(); ++i) {
+            if (std::isfinite(gv[i]))
+                s.push_back(gv[i]);
+        }
+        if (s.empty()) continue;
         std::sort(s.begin(), s.end());
         const auto n = static_cast<float>(s.size());
 
@@ -1244,6 +1254,9 @@ void PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
         medX.push_back(cx);
         medY.push_back(med);
     }
+    if (verts.empty()) return;
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
 
     PlotStyle vStyle = style;
     if (vStyle.opacity >= 1.0f && !vStyle.color)
