@@ -254,6 +254,25 @@ int main(int argc, char* argv[])
     if (!statisticsView.is2DView())
         return 46;
 
+    Skigen::Plot::PlotView parameterView;
+    if (!parameterView.hist(y, -1))
+        return 47;
+    Eigen::MatrixXf field(2, 2);
+    field << 0.0f, 1.0f,
+             1.0f, 0.0f;
+    Skigen::Plot::PlotView contourParameterView;
+    contourParameterView.contour(field, 0);
+    if (!contourParameterView.is2DView())
+        return 48;
+    Skigen::Plot::PlotView contourfParameterView;
+    contourfParameterView.contourf(field, -1);
+    if (!contourfParameterView.is2DView())
+        return 49;
+    Skigen::Plot::PlotView hexbinParameterView;
+    hexbinParameterView.hexbin(x, y, 0);
+    if (!hexbinParameterView.is2DView())
+        return 50;
+
     const auto stems = view.stem(x, y, {.label = "stems"});
     if (!stems || !view.containsSeries(stems)
         || !view.updateSeriesData(stems, x, updatedY)

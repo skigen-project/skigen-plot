@@ -105,6 +105,10 @@ finite positive weights and remain unchanged when none are available.
 Box and violin plots omit non-finite samples and empty groups while retaining
 the original positions of groups that contain finite data.
 
+Non-positive histogram bin counts select the automatic Sturges rule. Contour
+levels are clamped to at least one for lines and two for filled contours, and
+hexbin grid sizes are clamped to at least two.
+
 A stem plot's vertical geometry and marker tips share one handle. Data, style,
 visibility, and removal operations therefore apply to the complete composite.
 

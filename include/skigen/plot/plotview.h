@@ -263,7 +263,7 @@ public:
     /// @brief Draw iso-lines of scalar field @p z at @p levels evenly-spaced
     ///   levels between the data min and max (marching squares). Cell (r, c)
     ///   maps to grid coordinate (c, rows-1-r), matching imshow(). Cells with
-    ///   non-finite corners are omitted.
+    ///   non-finite corners are omitted. Values of @p levels below 1 use 1.
     template <typename Derived>
     void contour(const Eigen::MatrixBase<Derived>& z, int levels = 8,
                  const PlotStyle& style = {})
@@ -275,7 +275,8 @@ public:
     }
 
     /// @brief Filled contour: colour each finite cell by its value band using
-    ///   @p cmap (cell-level quantisation). Companion to contour().
+    ///   @p cmap (cell-level quantisation). Companion to contour(). Values of
+    ///   @p levels below 2 use 2.
     template <typename Derived>
     void contourf(const Eigen::MatrixBase<Derived>& z, int levels = 10,
                   Colormap cmap = Colormap::Viridis)
@@ -318,7 +319,8 @@ public:
 
     /// @brief Hexagonally bin points (@p x, @p y) into a @p gridsize-wide grid
     ///   and colour each hexagon by its count using @p cmap. Non-finite pairs
-    ///   are omitted; all-invalid input leaves the view unchanged.
+    ///   are omitted; all-invalid input leaves the view unchanged. Values of
+    ///   @p gridsize below 2 use 2.
     template <typename DX, typename DY>
     void hexbin(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
                 int gridsize = 20, Colormap cmap = Colormap::Viridis)
