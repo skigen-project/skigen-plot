@@ -47,6 +47,35 @@ auto lineStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     };
 }
 
+auto logScaleStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
+    return {
+        std::move(filename),
+        [theme](Skigen::Plot::PlotView& view) {
+            constexpr int n = 240;
+            Eigen::VectorXf frequency(n);
+            Eigen::VectorXf response(n);
+            for (int i = 0; i < n; ++i) {
+                const float exponent = -1.0f + 4.0f * static_cast<float>(i)
+                    / static_cast<float>(n - 1);
+                frequency(i) = std::pow(10.0f, exponent);
+                response(i) = 1.0f / std::sqrt(1.0f
+                    + std::pow(frequency(i) / 18.0f, 2.0f));
+            }
+
+            view.clear();
+            view.setTheme(theme);
+            view.setTitle(QStringLiteral("Logarithmic Frequency Response"));
+            view.setCaption(QStringLiteral("Base-10 x scale with decade ticks"));
+            view.setAxisLabels(QStringLiteral("frequency [Hz]"),
+                               QStringLiteral("normalised response"));
+            view.setXScale(Skigen::Plot::AxisScale::Log10);
+            view.plot(frequency, response,
+                      {.lineWidth = 2.4f, .label = "low-pass response"});
+            view.setLegendVisible(true);
+        }
+    };
+}
+
 auto scatterStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     return {
         std::move(filename),
@@ -472,6 +501,8 @@ int main(int argc, char* argv[]) {
         pointCloudStep(QStringLiteral("point_cloud_dark.png"), Skigen::Plot::Theme::dark()),
         meshStep(QStringLiteral("mesh_paper.png"), Skigen::Plot::Theme::paper()),
         meshStep(QStringLiteral("mesh_dark.png"), Skigen::Plot::Theme::dark()),
+        logScaleStep(QStringLiteral("log_scale_paper.png"), Skigen::Plot::Theme::paper()),
+        logScaleStep(QStringLiteral("log_scale_dark.png"), Skigen::Plot::Theme::dark()),
     };
 
     Skigen::Plot::PlotView view;
@@ -490,6 +521,10 @@ int main(int argc, char* argv[]) {
 
         const auto& step = steps[*index];
         view.setGridVisible(true);       // default; a step may turn it off
+        view.setAxesVisible(true);
+        view.setLegendVisible(false);
+        view.setXScale(Skigen::Plot::AxisScale::Linear);
+        view.setYScale(Skigen::Plot::AxisScale::Linear);
         view.setColorbarVisible(false);  // default; colormapped steps enable it
         // The clean paper/matplotlib look uses plain spines (no arrowheads).
         // Set before setup() so a step can still override (e.g. image plots).
