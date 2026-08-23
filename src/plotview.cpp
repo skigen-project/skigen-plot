@@ -3330,7 +3330,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
 
     // ── Uniform buffers (grid, axis, 3D) ───────────────────────────
     d->point3dUniformBuffer = makeUB(r, 96);
-    d->meshUniformBuffer    = makeUB(r, 112);
+    d->meshUniformBuffer    = makeUB(r, 128);
     d->meshEdgeUniformBuffer = makeUB(r, 80);
     d->guide3dUniformBuffer = makeUB(r, 80);
     d->gridUniformBuffer    = makeUB(r, 96);
@@ -3861,7 +3861,8 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         Eigen::Vector3f up = right.cross(forward).normalized();
         Eigen::Vector3f keyLight = (-forward + 0.50f * up + 0.24f * right).normalized();
         Eigen::Vector4f lightDir(keyLight.x(), keyLight.y(), keyLight.z(), 0.f);
-        Eigen::Vector4f lightParams(0.36f, 0.42f, 0.10f, 0.0f);
+        Eigen::Vector4f lightParams(0.38f, 0.46f, 0.11f, 0.16f);
+        Eigen::Vector4f surfaceRange(d->bounds3d.min.y(), d->bounds3d.max.y(), 0.f, 0.f);
         bool darkBg = bgColor.x() < 0.5f;
         Eigen::Vector4f edgeColor = darkBg
             ? Eigen::Vector4f(0.82f, 0.96f, 1.00f, 0.48f)
@@ -3871,6 +3872,8 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                                d->data3dColor.data());
         u->updateDynamicBuffer(d->meshUniformBuffer.get(), 80, 16, lightDir.data());
         u->updateDynamicBuffer(d->meshUniformBuffer.get(), 96, 16, lightParams.data());
+        u->updateDynamicBuffer(d->meshUniformBuffer.get(), 112, 16,
+                       surfaceRange.data());
 
         u->updateDynamicBuffer(d->meshEdgeUniformBuffer.get(), 0, 64, mvp.data());
         u->updateDynamicBuffer(d->meshEdgeUniformBuffer.get(), 64, 16,
