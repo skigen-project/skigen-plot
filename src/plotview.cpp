@@ -79,6 +79,7 @@ struct Series2D {
     Eigen::Vector4f color;
     float pointSize = 5.0f;
     bool hollow = false;
+    MarkerShape marker = MarkerShape::Circle;
     bool visible = true;
     QString label;
     bool dirty = true;
@@ -590,6 +591,7 @@ auto PlotView::addSeriesImpl(int kindInt,
     series.color = resolvedColor;
     series.pointSize = style.pointSize;
     series.hollow = style.hollow;
+    series.marker = style.marker;
     series.label = style.label;
     series.dirty = true;
 
@@ -645,6 +647,7 @@ auto PlotView::setSeriesStyle(SeriesHandle handle,
     seriesIt->color = resolvedColor;
     seriesIt->pointSize = style.pointSize;
     seriesIt->hollow = style.hollow;
+    seriesIt->marker = style.marker;
     seriesIt->label = style.label;
     if (d->textOverlay) d->textOverlay->update();
     update();
@@ -3205,7 +3208,11 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         u->updateDynamicBuffer(s.ub, 0, 64, mvp.data());
         u->updateDynamicBuffer(s.ub, 64, 16, s.color.data());
         if (s.kind == SeriesKind::Scatter) {
-            Eigen::Vector4f params(s.pointSize, s.hollow ? 1.f : 0.f, 0.f, 0.f);
+            Eigen::Vector4f params(
+                s.pointSize,
+                s.hollow ? 1.f : 0.f,
+                static_cast<float>(s.marker),
+                0.f);
             u->updateDynamicBuffer(s.ub, 80, 16, params.data());
         }
     }

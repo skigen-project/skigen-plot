@@ -27,6 +27,14 @@ private:
     friend class PlotView;
 };
 
+enum class MarkerShape {
+    Circle,
+    Square,
+    Triangle,
+    Plus,
+    Cross
+};
+
 struct SKIGENPLOT_EXPORT PlotStyle {
     std::optional<Eigen::Vector4f> color;
     float lineWidth = 1.5f;
@@ -34,6 +42,7 @@ struct SKIGENPLOT_EXPORT PlotStyle {
     float opacity = 1.0f;
     bool hollow = false;
     QString label;
+    MarkerShape marker = MarkerShape::Circle;
 };
 
 } // namespace Skigen::Plot

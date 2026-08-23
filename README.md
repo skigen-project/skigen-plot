@@ -52,6 +52,7 @@ or explicit corner placement.
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,
 `resetYLimits()`, or `resetAxisLimits()` restore automatic limits.
+Scatter series support circle, square, triangle, plus, and cross markers.
 
 ## Plot Types
 

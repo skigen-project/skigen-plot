@@ -66,8 +66,13 @@ auto scatterStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
             view.setTitle(QStringLiteral("Gaussian Clusters"));
             view.setCaption(QStringLiteral("Soft-edged points with translucent grid and axis labels"));
             view.setAxisLabels(QStringLiteral("feature 1"), QStringLiteral("feature 2"));
-            view.scatter(x1, y1, {.pointSize = 6.0f, .label = "Cluster A"});
-            view.scatter(x2, y2, {.pointSize = 6.0f, .label = "Cluster B"});
+            view.scatter(x1, y1, {.pointSize = 7.0f,
+                                  .label = "Cluster A",
+                                  .marker = Skigen::Plot::MarkerShape::Square});
+            view.scatter(x2, y2, {.pointSize = 8.0f,
+                                  .hollow = true,
+                                  .label = "Cluster B",
+                                  .marker = Skigen::Plot::MarkerShape::Triangle});
         }
     };
 }

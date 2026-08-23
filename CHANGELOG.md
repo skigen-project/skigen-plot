@@ -21,6 +21,8 @@ All notable changes to SkigenPlot will be documented in this file.
   placement.
 - Independent x/y axis limits with getters, autoscale reset, validation, and
   intentional axis inversion through reversed endpoints.
+- Circle, square, triangle, plus, and cross scatter markers, including hollow
+  rendering for closed shapes.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

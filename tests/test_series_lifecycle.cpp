@@ -8,6 +8,7 @@
 
 #include <Eigen/Core>
 
+#include <array>
 #include <limits>
 
 int main(int argc, char* argv[])
@@ -85,6 +86,17 @@ int main(int argc, char* argv[])
         return 3;
     if (!view.setSeriesStyle(points, {.pointSize = 9.0f, .hollow = true}))
         return 4;
+    constexpr std::array markerShapes{
+        Skigen::Plot::MarkerShape::Circle,
+        Skigen::Plot::MarkerShape::Square,
+        Skigen::Plot::MarkerShape::Triangle,
+        Skigen::Plot::MarkerShape::Plus,
+        Skigen::Plot::MarkerShape::Cross
+    };
+    for (auto marker : markerShapes) {
+        if (!view.setSeriesStyle(points, {.pointSize = 9.0f, .marker = marker}))
+            return 31;
+    }
     if (!view.setSeriesVisible(line, false) || !view.is2DView())
         return 5;
     if (!view.setSeriesVisible(points, false) || view.is2DView())
