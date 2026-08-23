@@ -19,6 +19,7 @@
 #include <expected>
 #include <numbers>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -90,6 +91,11 @@ struct PlotView::Impl {
     // 2D series
     std::vector<Series2D> series2d;
     int nextColorIndex = 0;
+    std::optional<std::size_t> telemetrySeries;
+    std::vector<float> telemetryRing;
+    std::size_t telemetryHead = 0;
+    std::size_t telemetrySize = 0;
+    float telemetryNextX = 0.0f;
 
     // Shared pipelines (all Line2D series share linePipeline, etc.)
     std::unique_ptr<QRhiGraphicsPipeline> linePipeline;
@@ -229,7 +235,11 @@ struct PlotView::Impl {
     bool dragging = false;
     QPoint lastMousePos;
 
-    bool has2D() const { return !series2d.empty() || hasHeatmap || hasContour; }
+    bool has2D() const {
+        return std::ranges::any_of(series2d, [](const Series2D& series) {
+            return series.vertexCount > 0;
+        }) || hasHeatmap || hasContour;
+    }
     bool has3D() const { return mode3d != RenderMode3D::None; }
     bool hasData() const { return has2D() || has3D(); }
 };
@@ -574,13 +584,88 @@ void PlotView::addSeriesImpl(int kindInt,
         quint32 ubSize = (kind == SeriesKind::Scatter) ? 96u : 80u;
         series.ub = makeRawUB(r, ubSize);
         series.srb = makeSrb(r, series.ub);
-        int floats = static_cast<int>(series.vertices.size());
+        int floats = std::max(static_cast<int>(series.vertices.size()), 1);
         series.vb = makeRawDynBuf(r, QRhiBuffer::VertexBuffer,
                                    quint32(floats * sizeof(float)));
         series.vbCapacity = floats;
     }
 
     d->series2d.push_back(std::move(series));
+    recomputeBounds();
+    d->gridDirty = true;
+    update();
+}
+
+void PlotView::startTelemetry(std::size_t windowSize,
+                              const PlotStyle& style) {
+    if (windowSize == 0)
+        throw std::invalid_argument("telemetry window size must be positive");
+
+    clearTelemetry();
+    addSeriesImpl(static_cast<int>(SeriesKind::Line), {}, {}, style);
+    d->telemetrySeries = d->series2d.size() - 1;
+    d->telemetryRing.resize(windowSize * 2);
+    d->telemetryHead = 0;
+    d->telemetrySize = 0;
+    d->telemetryNextX = 0.0f;
+    d->series2d.back().vertices.reserve(windowSize * 2);
+}
+
+void PlotView::appendTelemetry(float value) {
+    const float x = d->telemetryNextX;
+    appendTelemetry(x, value);
+}
+
+void PlotView::appendTelemetry(float x, float y) {
+    if (!d->telemetrySeries)
+        throw std::logic_error("startTelemetry must be called before appending samples");
+
+    const std::size_t capacity = d->telemetryRing.size() / 2;
+    std::size_t position = (d->telemetryHead + d->telemetrySize) % capacity;
+    if (d->telemetrySize == capacity) {
+        position = d->telemetryHead;
+        d->telemetryHead = (d->telemetryHead + 1) % capacity;
+    } else {
+        ++d->telemetrySize;
+    }
+    d->telemetryRing[position * 2] = x;
+    d->telemetryRing[position * 2 + 1] = y;
+
+    auto& series = d->series2d[*d->telemetrySeries];
+    series.vertices.resize(d->telemetrySize * 2);
+    for (std::size_t i = 0; i < d->telemetrySize; ++i) {
+        const std::size_t source = (d->telemetryHead + i) % capacity;
+        series.vertices[i * 2] = d->telemetryRing[source * 2];
+        series.vertices[i * 2 + 1] = d->telemetryRing[source * 2 + 1];
+    }
+    series.vertexCount = static_cast<int>(d->telemetrySize);
+    series.dirty = true;
+    d->telemetryNextX = x + 1.0f;
+
+    recomputeBounds();
+    d->gridDirty = true;
+    update();
+}
+
+auto PlotView::telemetryPointCount() const -> std::size_t {
+    return d->telemetrySize;
+}
+
+void PlotView::clearTelemetry() {
+    if (!d->telemetrySeries)
+        return;
+
+    auto seriesIt = d->series2d.begin()
+        + static_cast<std::ptrdiff_t>(*d->telemetrySeries);
+    delete seriesIt->vb;
+    delete seriesIt->ub;
+    delete seriesIt->srb;
+    d->series2d.erase(seriesIt);
+    d->telemetrySeries.reset();
+    d->telemetryRing.clear();
+    d->telemetryHead = 0;
+    d->telemetrySize = 0;
+    d->telemetryNextX = 0.0f;
     recomputeBounds();
     d->gridDirty = true;
     update();
@@ -1472,6 +1557,11 @@ void PlotView::clear() {
     }
     d->series2d.clear();
     d->nextColorIndex = 0;
+    d->telemetrySeries.reset();
+    d->telemetryRing.clear();
+    d->telemetryHead = 0;
+    d->telemetrySize = 0;
+    d->telemetryNextX = 0.0f;
     d->mode3d = RenderMode3D::None;
     d->hasHeatmap = false;
     d->heatmapVertices.clear();
@@ -2684,7 +2774,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                                   quint32(s.vbCapacity * sizeof(float)));
             s.dirty = true;
         }
-        if (s.dirty) {
+        if (s.dirty && !s.vertices.empty()) {
             u->updateDynamicBuffer(s.vb, 0,
                                    quint32(s.vertices.size() * sizeof(float)),
                                    s.vertices.data());

@@ -12,7 +12,7 @@
 
 SkigenPlot is the visualization component of the [Skigen](https://github.com/skigen-project/skigen) ecosystem. It renders 2D and 3D scientific data through Qt's RHI abstraction layer, mapping directly to Vulkan, Metal, or Direct3D 12 without intermediate software rasterization.
 
-The library accepts Eigen expression templates natively — any `Eigen::MatrixBase<Derived>` is a valid input with zero-copy semantics for contiguous data. Dynamic vertex buffers sustain 60 Hz+ update rates at 1M+ data points, suitable for real-time telemetry, EEG streams, and simulation output.
+The library accepts Eigen expression templates natively and retains plot data in GPU-ready float storage. Dynamic vertex buffers and a bounded telemetry API support real-time sensor streams, EEG displays, and simulation output.
 
 ## Example
 
@@ -45,7 +45,12 @@ int main(int argc, char* argv[]) {
 |------|-----------|-------|
 | Line plot | 2D | `VectorXf` x, y |
 | Scatter plot | 2D | `VectorXf` x, y |
-| Scrolling telemetry | 2D | Streaming `VectorXf` |
+| Scrolling telemetry | 2D | Bounded sample stream |
+| Histogram / bar chart | 2D | `VectorXf` |
+| Error bars / filled area / step / stem | 2D | `VectorXf` series |
+| Box / violin plot | 2D | Groups of `VectorXf` |
+| Heatmap / contour | 2D | `MatrixXf` |
+| Quiver / hexbin / pie | 2D | Vector or matrix data |
 | Point cloud | 3D | `MatrixXf` (N x 3) |
 | Surface mesh | 3D | Vertices (N x 3) + indices (M x 3) |
 

@@ -8,6 +8,7 @@
 #include <Eigen/Core>
 #include <QRhiWidget>
 
+#include <cstddef>
 #include <memory>
 #include <span>
 #include <vector>
@@ -59,6 +60,25 @@ public:
                          {yf.data(), static_cast<std::size_t>(yf.size())},
                          style);
     }
+
+    // -- Scrolling telemetry -----------------------------------------
+
+    /// @brief Start a line series that retains the latest @p windowSize
+    ///   samples. Starting a new telemetry stream replaces the current one.
+    void startTelemetry(std::size_t windowSize,
+                        const PlotStyle& style = {});
+
+    /// @brief Append a sample using a monotonically increasing x coordinate.
+    void appendTelemetry(float value);
+
+    /// @brief Append a sample with an explicit x coordinate.
+    void appendTelemetry(float x, float y);
+
+    /// @brief Number of samples currently retained by the telemetry stream.
+    auto telemetryPointCount() const -> std::size_t;
+
+    /// @brief Remove the active telemetry stream and its line series.
+    void clearTelemetry();
 
     // ── 2D histogram (adds a filled series) ─────────────────────────
 

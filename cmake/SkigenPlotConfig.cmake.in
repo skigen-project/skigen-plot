@@ -3,7 +3,7 @@
 include(CMakeFindDependencyMacro)
 
 find_dependency(Eigen3 3.4)
-find_dependency(Qt6 COMPONENTS Core Gui Widgets)
+find_dependency(Qt6 COMPONENTS Core Gui Widgets GuiPrivate)
 
 include("${CMAKE_CURRENT_LIST_DIR}/SkigenPlotTargets.cmake")
 

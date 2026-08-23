@@ -5,52 +5,41 @@ title: Real-Time Data
 
 # Real-Time Data Streaming
 
-SkigenPlot is designed for live data visualization — EEG telemetry, sensor streams, simulation output. The dynamic vertex buffer architecture supports per-frame data updates at 60 Hz+.
+SkigenPlot is designed for live data visualization — EEG telemetry, sensor streams, simulation output. The bounded telemetry API retains only the latest samples and reuses the line-rendering pipeline.
 
 ## Pattern
 
-Call `plot()` or `scatter()` each time new data arrives. The widget automatically:
-1. Re-interleaves x/y into the GPU vertex buffer
-2. Recomputes the bounding box for auto-scaling
-3. Uploads and renders in the next frame
+Call `startTelemetry()` once with the desired window size, then append samples as they arrive. The widget automatically evicts the oldest sample, recomputes the visible bounds, and uploads the ordered window on the next frame.
 
 ```cpp
-// Timer-driven update
+view.startTelemetry(300, {.label = "signal"});
+
 QTimer timer;
 QObject::connect(&timer, &QTimer::timeout, [&]() {
-    // Shift window and append new sample
-    x = x.tail(n - 1).eval();
-    y = y.tail(n - 1).eval();
-    x.conservativeResize(n);
-    y.conservativeResize(n);
-    x(n - 1) = currentTime();
-    y(n - 1) = readSensor();
-
-    view.plot(x, y);
+    view.appendTelemetry(currentTime(), readSensor());
 });
 timer.start(16);  // ~60 Hz
 ```
 
 ## Buffer Management
 
-Dynamic vertex buffers grow automatically:
+The telemetry sample store is a fixed-capacity circular buffer. Its GPU-facing line buffer is allocated for the configured window and does not grow while samples are appended.
 
-| Initial capacity | Growth strategy | Behaviour |
-|-------------------|-----------------|-----------|
-| 128 K floats (64 K vertices) | 2× when exceeded | No pipeline recreation needed |
+Calling `startTelemetry()` again replaces the existing telemetry series. `clearTelemetry()` removes it without clearing unrelated plot series.
 
 For fixed-size scrolling windows, the buffer never grows — only contents are updated.
 
 ## Performance Considerations
 
-- **Zero-copy path**: When the source is a contiguous `Eigen::VectorXf`, the template evaluates to a direct `memcpy` into the interleave buffer.
-- **Expression evaluation**: Non-contiguous expressions (blocks, casts) are evaluated once into a temporary before upload.
-- **GPU upload**: Uses `QRhiBuffer::Dynamic` with `updateDynamicBuffer()` — CPU-visible memory, no staging copies.
+- **Bounded storage**: Appending to the telemetry sample ring does not allocate after initialization.
+- **Ordered upload**: The retained circular window is linearized into the line-series buffer before upload.
+- **GPU upload**: Uses `QRhiBuffer::Dynamic` with `updateDynamicBuffer()`.
+- **Performance targets**: The rates below are design targets and must be verified on each release runner and graphics backend.
 
 ## Use Cases
 
-| Application | Update rate | Data size |
-|-------------|-------------|-----------|
+| Application | Target update rate | Data size |
+|-------------|--------------------|-----------|
 | EEG telemetry (mne-cpp) | 60 Hz | 1–10 K samples/channel |
 | Sensor dashboard | 30 Hz | 100–1 K samples |
 | Simulation live view | 60 Hz | 10 K–1 M points |

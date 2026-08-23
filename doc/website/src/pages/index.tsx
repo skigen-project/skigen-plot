@@ -137,8 +137,8 @@ export default function Home(): React.JSX.Element {
                     <div className="container">
                         <div className={styles.statsGrid}>
                             <div className={styles.statItem}>
-                                <span className={styles.statNumber}>60 Hz+</span>
-                                <span className={styles.statLabel}>at 1M points</span>
+                                <span className={styles.statNumber}>60 Hz</span>
+                                <span className={styles.statLabel}>design target</span>
                             </div>
                             <div className={styles.statItem}>
                                 <span className={styles.statNumber}>C++23</span>

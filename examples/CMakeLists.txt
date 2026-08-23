@@ -13,6 +13,7 @@ endfunction()
 # 2D line examples
 # ---------------------------------------------------------------------------
 skigenplot_add_example(ex_line_plot       line/line_plot.cpp)
+skigenplot_add_example(ex_telemetry       line/telemetry.cpp)
 
 # ---------------------------------------------------------------------------
 # 2D scatter examples
