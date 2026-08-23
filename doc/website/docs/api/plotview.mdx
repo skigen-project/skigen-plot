@@ -28,6 +28,13 @@ public:
                          const Eigen::MatrixBase<DerivedY>& y,
                          const PlotStyle& style = {});
 
+    // 2D histogram
+    template <typename Derived>
+    SeriesHandle hist(const Eigen::MatrixBase<Derived>& values,
+                      int bins = 0,
+                      bool density = false,
+                      const PlotStyle& style = {});
+
     // Line and scatter lifecycle
     bool updateSeriesData(SeriesHandle handle, const auto& x, const auto& y);
     bool setSeriesStyle(SeriesHandle handle, const PlotStyle& style);
@@ -60,9 +67,10 @@ public:
 
 `PlotView` is the central class of SkigenPlot. It accepts Eigen matrix expressions directly — no manual data conversion needed. Data is interleaved into GPU vertex buffers and rendered using Qt's RHI abstraction layer.
 
-Line and scatter creation returns an opaque `SeriesHandle`. Handles remain
-stable when other series are removed. Mutating or removing an invalid, stale,
-or foreign handle returns `false` and leaves the view unchanged.
+Line, scatter, and histogram creation returns an opaque `SeriesHandle`.
+Handles remain stable when other series are removed. Mutating or removing an
+invalid, stale, or foreign handle returns `false` and leaves the view
+unchanged. An empty histogram input returns an invalid handle.
 
 Set a non-empty `PlotStyle::label` and call `setLegendVisible(true)` to show a
 theme-aware legend. `LegendPosition::Auto` selects the least occupied plot

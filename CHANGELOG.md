@@ -14,6 +14,8 @@ All notable changes to SkigenPlot will be documented in this file.
   coordinates.
 - Stable line and scatter handles with in-place data/style updates, visibility
   control, and independent removal.
+- Histogram creation returns a stable handle with the same style, visibility,
+  and removal operations.
 - Theme-aware legends for labelled 2D series with automatic or fixed-corner
   placement.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.

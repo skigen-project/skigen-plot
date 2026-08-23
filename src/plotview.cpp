@@ -759,12 +759,13 @@ void PlotView::clearTelemetry() {
     update();
 }
 
-void PlotView::addFillSeries(std::span<const float> triangleVertices,
-                             const PlotStyle& style) {
+auto PlotView::addFillSeries(std::span<const float> triangleVertices,
+                             const PlotStyle& style) -> SeriesHandle {
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
     Series2D series;
+    series.id = nextSeriesId();
     series.kind = SeriesKind::Fill;
     series.vertices.assign(triangleVertices.begin(), triangleVertices.end());
     series.vertexCount = static_cast<int>(series.vertices.size() / 2);
@@ -776,6 +777,7 @@ void PlotView::addFillSeries(std::span<const float> triangleVertices,
     if (style.opacity < 1.0f)
         resolvedColor.w() = style.opacity;
     series.color = resolvedColor;
+    series.label = style.label;
     series.dirty = true;
 
     if (d->pipelineReady) {
@@ -788,10 +790,12 @@ void PlotView::addFillSeries(std::span<const float> triangleVertices,
         series.vbCapacity = floats;
     }
 
+    const SeriesHandle handle(series.id);
     d->series2d.push_back(std::move(series));
     recomputeBounds();
     d->gridDirty = true;
     update();
+    return handle;
 }
 
 namespace {
@@ -807,10 +811,10 @@ void appendQuad(std::vector<float>& out,
 
 } // namespace
 
-void PlotView::histImpl(std::span<const float> values, int bins, bool density,
-                        const PlotStyle& style) {
+auto PlotView::histImpl(std::span<const float> values, int bins, bool density,
+                        const PlotStyle& style) -> SeriesHandle {
     const int n = static_cast<int>(values.size());
-    if (n == 0) return;
+    if (n == 0) return {};
 
     float lo = values[0], hi = values[0];
     for (float v : values) { lo = std::min(lo, v); hi = std::max(hi, v); }
@@ -843,7 +847,7 @@ void PlotView::histImpl(std::span<const float> values, int bins, bool density,
         float x1 = lo + static_cast<float>(b + 1) * binW - gap;
         appendQuad(verts, x0, 0.0f, x1, height(counts[static_cast<std::size_t>(b)]));
     }
-    addFillSeries(verts, style);
+    return addFillSeries(verts, style);
 }
 
 void PlotView::barImpl(std::span<const float> positions,

@@ -5,7 +5,6 @@
 
 #include <QApplication>
 #include <QImage>
-#include <QPainter>
 
 #include <Eigen/Core>
 
@@ -29,7 +28,7 @@ int main(int argc, char* argv[])
     view.resize(640, 480);
     QImage withoutLegend(view.size(), QImage::Format_ARGB32_Premultiplied);
     withoutLegend.fill(Qt::transparent);
-    view.render(&withoutLegend);
+    static_cast<QWidget&>(view).render(&withoutLegend);
 
     view.setLegendVisible(true);
     view.setLegendPosition(Skigen::Plot::LegendPosition::LowerLeft);
@@ -40,7 +39,7 @@ int main(int argc, char* argv[])
 
     QImage withLegend(view.size(), QImage::Format_ARGB32_Premultiplied);
     withLegend.fill(Qt::transparent);
-    view.render(&withLegend);
+    static_cast<QWidget&>(view).render(&withLegend);
     int changedPixels = 0;
     for (int yPixel = 0; yPixel < withLegend.height(); ++yPixel) {
         for (int xPixel = 0; xPixel < withLegend.width(); ++xPixel) {
@@ -79,6 +78,20 @@ int main(int argc, char* argv[])
     Skigen::Plot::PlotView otherView;
     if (otherView.containsSeries(points) || otherView.removeSeries(points))
         return 11;
+
+    const auto histogram = view.hist(y, 2, false, {.label = "histogram"});
+    if (!histogram || !view.containsSeries(histogram))
+        return 15;
+    if (!view.setSeriesStyle(histogram, {.label = "updated histogram"})
+        || !view.setSeriesVisible(histogram, false)
+        || !view.removeSeries(histogram)
+        || view.containsSeries(histogram)) {
+        return 16;
+    }
+
+    Eigen::VectorXf empty;
+    if (view.hist(empty))
+        return 17;
 
     view.clear();
     return view.containsSeries(points) ? 12 : 0;

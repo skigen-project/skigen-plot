@@ -110,15 +110,17 @@ public:
 
     /// @brief Bin @p values into @p bins uniform bins and draw the counts as
     ///   filled bars. When @p density is true, bars are normalised so their
-    ///   total area is 1. Use @p bins <= 0 for a Sturges-rule default.
+    ///   total area is 1. Use @p bins <= 0 for a Sturges-rule default. Returns
+    ///   an invalid handle when @p values is empty.
     template <typename Derived>
-    void hist(const Eigen::MatrixBase<Derived>& values,
+    auto hist(const Eigen::MatrixBase<Derived>& values,
               int bins = 0,
               bool density = false,
-              const PlotStyle& style = {})
+              const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf v = values.derived().template cast<float>().eval();
-        histImpl({v.data(), static_cast<std::size_t>(v.size())}, bins, density, style);
+        return histImpl({v.data(), static_cast<std::size_t>(v.size())},
+                        bins, density, style);
     }
 
     // ── 2D bar / horizontal bar (adds a filled series) ──────────────
@@ -426,11 +428,11 @@ private:
         -> SeriesHandle;
     auto updateSeriesDataImpl(SeriesHandle handle, std::span<const float> x,
                               std::span<const float> y) -> bool;
-    void addFillSeries(std::span<const float> triangleVertices,
-                       const PlotStyle& style);
+    auto addFillSeries(std::span<const float> triangleVertices,
+                       const PlotStyle& style) -> SeriesHandle;
 
-    void histImpl(std::span<const float> values, int bins, bool density,
-                  const PlotStyle& style);
+    auto histImpl(std::span<const float> values, int bins, bool density,
+                  const PlotStyle& style) -> SeriesHandle;
     void barImpl(std::span<const float> positions, std::span<const float> sizes,
                  float width, bool horizontal, const PlotStyle& style);
     void fillBetweenImpl(std::span<const float> x, std::span<const float> y0,
