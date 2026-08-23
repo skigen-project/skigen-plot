@@ -117,6 +117,30 @@ void test_bbox2d_expanded() {
     ASSERT_NEAR(center.y(), 10.f, 1e-6f);
 }
 
+void test_axis_scale_transforms() {
+    using Skigen::Plot::AxisScale;
+    ASSERT_NEAR(Skigen::Plot::axisTransform(12.5f, AxisScale::Linear),
+                12.5f, 1e-6f);
+    ASSERT_NEAR(Skigen::Plot::axisTransform(100.0f, AxisScale::Log10),
+                2.0f, 1e-6f);
+    ASSERT_NEAR(Skigen::Plot::axisInverseTransform(-2.0f, AxisScale::Log10),
+                0.01f, 1e-6f);
+    ASSERT_TRUE(std::isnan(Skigen::Plot::axisTransform(0.0f,
+                                                       AxisScale::Log10)));
+}
+
+void test_log_ticks() {
+    const auto ticks = Skigen::Plot::computeLogTicks(0.1f, 1000.0f, 10);
+    ASSERT_TRUE(ticks.ticks.size() == 5);
+    ASSERT_NEAR(ticks.ticks.front(), -1.0f, 1e-6f);
+    ASSERT_NEAR(ticks.ticks.back(), 3.0f, 1e-6f);
+    const auto reversed = Skigen::Plot::computeLogTicks(1000.0f, 0.1f, 3);
+    ASSERT_TRUE(!reversed.ticks.empty());
+    ASSERT_NEAR(reversed.ticks.front(), -1.0f, 1e-6f);
+    ASSERT_NEAR(reversed.ticks.back(), 3.0f, 1e-6f);
+    ASSERT_TRUE(Skigen::Plot::computeLogTicks(-1.0f, 10.0f).ticks.empty());
+}
+
 // ---------------------------------------------------------------------------
 // BoundingBox3D tests
 // ---------------------------------------------------------------------------
@@ -467,6 +491,8 @@ int main() {
     run_test("bbox2d_from_xy",             test_bbox2d_from_xy);
     run_test("bbox2d_width_height_center", test_bbox2d_width_height_center);
     run_test("bbox2d_expanded",            test_bbox2d_expanded);
+    run_test("axis_scale_transforms",       test_axis_scale_transforms);
+    run_test("log_ticks",                   test_log_ticks);
     run_test("bbox2d_merge_basic",         test_bbox2d_merge_basic);
     run_test("bbox2d_merge_default",       test_bbox2d_merge_default);
     run_test("bbox3d_from_vertices",       test_bbox3d_from_vertices);

@@ -160,6 +160,28 @@ struct SKIGENPLOT_EXPORT TickResult {
 SKIGENPLOT_EXPORT
 auto computeTicks(float lo, float hi, int maxTicks = 10) -> TickResult;
 
+enum class AxisScale {
+    Linear,
+    Log10
+};
+
+inline auto axisTransform(float value, AxisScale scale) -> float {
+    if (scale == AxisScale::Linear)
+        return value;
+    return value > 0.0f
+        ? std::log10(value)
+        : std::numeric_limits<float>::quiet_NaN();
+}
+
+inline auto axisInverseTransform(float value, AxisScale scale) -> float {
+    return scale == AxisScale::Linear ? value : std::pow(10.0f, value);
+}
+
+/// @brief Compute base-10 major ticks in transformed coordinates. Input
+///   endpoints may be reversed but must both be finite and positive.
+SKIGENPLOT_EXPORT
+auto computeLogTicks(float lo, float hi, int maxTicks = 10) -> TickResult;
+
 // ── Vertex normal computation ───────────────────────────────────────────
 
 SKIGENPLOT_EXPORT

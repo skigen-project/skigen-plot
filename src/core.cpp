@@ -266,6 +266,28 @@ auto computeTicks(float lo, float hi, int maxTicks) -> TickResult {
     return result;
 }
 
+auto computeLogTicks(float lo, float hi, int maxTicks) -> TickResult {
+    TickResult result;
+    if (!std::isfinite(lo) || !std::isfinite(hi)
+        || lo <= 0.0f || hi <= 0.0f || maxTicks < 1) {
+        return result;
+    }
+
+    const float scaledLo = std::log10(std::min(lo, hi));
+    const float scaledHi = std::log10(std::max(lo, hi));
+    const int firstDecade = static_cast<int>(std::floor(scaledLo));
+    const int lastDecade = static_cast<int>(std::ceil(scaledHi));
+    const int decadeCount = lastDecade - firstDecade + 1;
+    const int stride = std::max(1, static_cast<int>(std::ceil(
+        static_cast<float>(decadeCount) / static_cast<float>(maxTicks))));
+    result.spacing = static_cast<float>(stride);
+    for (int exponent = firstDecade; exponent <= lastDecade; exponent += stride)
+        result.ticks.push_back(static_cast<float>(exponent));
+    if (result.ticks.empty() || result.ticks.back() < scaledHi)
+        result.ticks.push_back(static_cast<float>(lastDecade));
+    return result;
+}
+
 // ── Vertex normal computation ───────────────────────────────────────────
 
 auto computeVertexNormals(std::span<const float> vertices, int vertexCount,
