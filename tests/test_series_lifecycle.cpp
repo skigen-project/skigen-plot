@@ -8,10 +8,17 @@
 
 #include <Eigen/Core>
 
+#include <limits>
+
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
     Skigen::Plot::PlotView view;
+
+    if (view.xLimits() != std::pair{0.0f, 1.0f}
+        || view.yLimits() != std::pair{0.0f, 1.0f}) {
+        return 30;
+    }
 
     Eigen::VectorXf x(3);
     x << 0.0f, 1.0f, 2.0f;
@@ -24,6 +31,26 @@ int main(int argc, char* argv[])
         return 1;
     if (!view.containsSeries(line) || !view.containsSeries(points))
         return 2;
+
+    if (!view.setXLimits(10.0f, -2.0f) || !view.setYLimits(-4.0f, 8.0f)
+        || view.xLimits() != std::pair{10.0f, -2.0f}
+        || view.yLimits() != std::pair{-4.0f, 8.0f}) {
+        return 26;
+    }
+    if (view.setXLimits(1.0f, 1.0f)
+        || view.setYLimits(0.0f, std::numeric_limits<float>::infinity())
+        || view.xLimits() != std::pair{10.0f, -2.0f}
+        || view.yLimits() != std::pair{-4.0f, 8.0f}) {
+        return 27;
+    }
+    view.resetXLimits();
+    if (view.xLimits() == std::pair{10.0f, -2.0f}
+        || view.yLimits() != std::pair{-4.0f, 8.0f}) {
+        return 28;
+    }
+    view.resetAxisLimits();
+    if (view.yLimits() == std::pair{-4.0f, 8.0f})
+        return 29;
 
     view.resize(640, 480);
     QImage withoutLegend(view.size(), QImage::Format_ARGB32_Premultiplied);

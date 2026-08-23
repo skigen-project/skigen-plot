@@ -19,6 +19,8 @@ All notable changes to SkigenPlot will be documented in this file.
   operations.
 - Theme-aware legends for labelled 2D series with automatic or fixed-corner
   placement.
+- Independent x/y axis limits with getters, autoscale reset, validation, and
+  intentional axis inversion through reversed endpoints.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

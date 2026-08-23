@@ -49,6 +49,10 @@ Use `updateSeriesData()`, `setSeriesStyle()`, `setSeriesVisible()`, and
 Visible labelled series can be shown in a theme-aware legend with automatic
 or explicit corner placement.
 
+Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
+is preserved, so reversed endpoints invert an axis. `resetXLimits()`,
+`resetYLimits()`, or `resetAxisLimits()` restore automatic limits.
+
 ## Plot Types
 
 | Type | Dimension | Input |

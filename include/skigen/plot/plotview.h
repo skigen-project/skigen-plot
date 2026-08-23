@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 class QRhiResourceUpdateBatch;
@@ -376,6 +377,18 @@ public:
     void setGridVisible(bool visible);
     void setAxesVisible(bool visible);
     void setAxisArrowsVisible(bool visible);
+
+    /// @brief Set explicit x-axis limits. Reversed limits invert the axis.
+    /// @return False when either endpoint is non-finite or both are equal.
+    auto setXLimits(float left, float right) -> bool;
+    /// @brief Set explicit y-axis limits. Reversed limits invert the axis.
+    /// @return False when either endpoint is non-finite or both are equal.
+    auto setYLimits(float bottom, float top) -> bool;
+    auto xLimits() const -> std::pair<float, float>;
+    auto yLimits() const -> std::pair<float, float>;
+    void resetXLimits();
+    void resetYLimits();
+    void resetAxisLimits();
 
     /// @brief Show or hide the legend for visible, labelled 2D series.
     void setLegendVisible(bool visible);

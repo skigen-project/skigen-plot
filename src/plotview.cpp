@@ -211,7 +211,8 @@ struct PlotView::Impl {
     // Spatial state
     BoundingBox2D bounds2d;
     BoundingBox2D viewBounds;
-    bool userViewBounds2d = false;
+    bool userXLimits = false;
+    bool userYLimits = false;
     BoundingBox3D bounds3d;
     Camera3D camera;
     Camera3D homeCamera;
@@ -1677,7 +1678,8 @@ void PlotView::clear() {
     d->zTickValues3d.clear();
     d->bounds2d = BoundingBox2D();
     d->viewBounds = BoundingBox2D();
-    d->userViewBounds2d = false;
+    d->userXLimits = false;
+    d->userYLimits = false;
     d->xTickValues.clear();
     d->yTickValues.clear();
     d->gridDirty = true;
@@ -1751,6 +1753,78 @@ void PlotView::setAxesVisible(bool visible) {
 void PlotView::setAxisArrowsVisible(bool visible) {
     d->showAxisArrows = visible;
     d->gridDirty = true;
+    update();
+}
+
+auto PlotView::setXLimits(float left, float right) -> bool {
+    if (!std::isfinite(left) || !std::isfinite(right) || left == right)
+        return false;
+    d->viewBounds.min.x() = left;
+    d->viewBounds.max.x() = right;
+    d->userXLimits = true;
+    d->gridDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
+    update();
+    return true;
+}
+
+auto PlotView::setYLimits(float bottom, float top) -> bool {
+    if (!std::isfinite(bottom) || !std::isfinite(top) || bottom == top)
+        return false;
+    d->viewBounds.min.y() = bottom;
+    d->viewBounds.max.y() = top;
+    d->userYLimits = true;
+    d->gridDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
+    update();
+    return true;
+}
+
+auto PlotView::xLimits() const -> std::pair<float, float> {
+    if (d->userXLimits)
+        return {d->viewBounds.min.x(), d->viewBounds.max.x()};
+    if (!std::isfinite(d->bounds2d.min.x())
+        || !std::isfinite(d->bounds2d.max.x())
+        || d->bounds2d.min.x() > d->bounds2d.max.x()) {
+        return {0.0f, 1.0f};
+    }
+    const auto ticks = computeTicks(d->bounds2d.min.x(), d->bounds2d.max.x()).ticks;
+    return ticks.empty() ? std::pair{0.0f, 1.0f}
+                         : std::pair{ticks.front(), ticks.back()};
+}
+
+auto PlotView::yLimits() const -> std::pair<float, float> {
+    if (d->userYLimits)
+        return {d->viewBounds.min.y(), d->viewBounds.max.y()};
+    if (!std::isfinite(d->bounds2d.min.y())
+        || !std::isfinite(d->bounds2d.max.y())
+        || d->bounds2d.min.y() > d->bounds2d.max.y()) {
+        return {0.0f, 1.0f};
+    }
+    const auto ticks = computeTicks(d->bounds2d.min.y(), d->bounds2d.max.y()).ticks;
+    return ticks.empty() ? std::pair{0.0f, 1.0f}
+                         : std::pair{ticks.front(), ticks.back()};
+}
+
+void PlotView::resetXLimits() {
+    d->userXLimits = false;
+    d->gridDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
+    update();
+}
+
+void PlotView::resetYLimits() {
+    d->userYLimits = false;
+    d->gridDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
+    update();
+}
+
+void PlotView::resetAxisLimits() {
+    d->userXLimits = false;
+    d->userYLimits = false;
+    d->gridDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
     update();
 }
 
@@ -1854,9 +1928,7 @@ auto PlotView::interactionTool() const -> InteractionTool {
 
 void PlotView::resetCameraView() {
     if (d->has2D() && !d->has3D()) {
-        d->userViewBounds2d = false;
-        d->gridDirty = true;
-        update();
+        resetAxisLimits();
         return;
     }
     d->camera = d->homeCamera;
@@ -1870,9 +1942,10 @@ void PlotView::resetCameraView() {
 
 void PlotView::zoomCamera(float factor) {
     if (d->has2D() && !d->has3D()) {
-        if (!d->userViewBounds2d) {
+        if (!d->userXLimits || !d->userYLimits) {
             computeGridVertices();
-            d->userViewBounds2d = true;
+            d->userXLimits = true;
+            d->userYLimits = true;
         }
 
         factor = std::clamp(factor, 0.1f, 10.0f);
@@ -1939,17 +2012,37 @@ void PlotView::computeGridVertices() {
     d->xTickValues.clear();
     d->yTickValues.clear();
 
-    BoundingBox2D sourceBounds = d->userViewBounds2d ? d->viewBounds : d->bounds2d;
-    auto xTicks = computeTicks(sourceBounds.min.x(), sourceBounds.max.x());
-    auto yTicks = computeTicks(sourceBounds.min.y(), sourceBounds.max.y());
+    BoundingBox2D sourceBounds = d->bounds2d;
+    if (d->userXLimits) {
+        sourceBounds.min.x() = d->viewBounds.min.x();
+        sourceBounds.max.x() = d->viewBounds.max.x();
+    }
+    if (d->userYLimits) {
+        sourceBounds.min.y() = d->viewBounds.min.y();
+        sourceBounds.max.y() = d->viewBounds.max.y();
+    }
+    const float xTickMin = std::min(sourceBounds.min.x(), sourceBounds.max.x());
+    const float xTickMax = std::max(sourceBounds.min.x(), sourceBounds.max.x());
+    const float yTickMin = std::min(sourceBounds.min.y(), sourceBounds.max.y());
+    const float yTickMax = std::max(sourceBounds.min.y(), sourceBounds.max.y());
+    auto xTicks = computeTicks(xTickMin, xTickMax);
+    auto yTicks = computeTicks(yTickMin, yTickMax);
 
     if (xTicks.ticks.empty() || yTicks.ticks.empty()) return;
 
-    if (d->userViewBounds2d) {
-        d->viewBounds = sourceBounds;
+    if (d->userXLimits) {
+        d->viewBounds.min.x() = sourceBounds.min.x();
+        d->viewBounds.max.x() = sourceBounds.max.x();
     } else {
-        d->viewBounds.min = Eigen::Vector2f(xTicks.ticks.front(), yTicks.ticks.front());
-        d->viewBounds.max = Eigen::Vector2f(xTicks.ticks.back(), yTicks.ticks.back());
+        d->viewBounds.min.x() = xTicks.ticks.front();
+        d->viewBounds.max.x() = xTicks.ticks.back();
+    }
+    if (d->userYLimits) {
+        d->viewBounds.min.y() = sourceBounds.min.y();
+        d->viewBounds.max.y() = sourceBounds.max.y();
+    } else {
+        d->viewBounds.min.y() = yTicks.ticks.front();
+        d->viewBounds.max.y() = yTicks.ticks.back();
     }
 
     float ylo = d->viewBounds.min.y();
@@ -1960,6 +2053,7 @@ void PlotView::computeGridVertices() {
     auto visibleTicks = [](const std::vector<float>& ticks, float lo, float hi) {
         std::vector<float> result;
         result.reserve(ticks.size());
+        if (lo > hi) std::swap(lo, hi);
         float eps = std::max(1e-6f, (hi - lo) * 1e-5f);
         for (float tick : ticks) {
             if (tick >= lo - eps && tick <= hi + eps)
@@ -1968,8 +2062,8 @@ void PlotView::computeGridVertices() {
         return result;
     };
 
-    d->xTickValues = d->userViewBounds2d ? visibleTicks(xTicks.ticks, xlo, xhi) : xTicks.ticks;
-    d->yTickValues = d->userViewBounds2d ? visibleTicks(yTicks.ticks, ylo, yhi) : yTicks.ticks;
+    d->xTickValues = d->userXLimits ? visibleTicks(xTicks.ticks, xlo, xhi) : xTicks.ticks;
+    d->yTickValues = d->userYLimits ? visibleTicks(yTicks.ticks, ylo, yhi) : yTicks.ticks;
 
     for (float xt : d->xTickValues) {
         d->gridVertices.push_back(xt); d->gridVertices.push_back(ylo);
@@ -1999,8 +2093,8 @@ void PlotView::computeGridVertices() {
         // Data->pixel scale: 1 data-unit-x -> (W / xRange) px (the ortho
         // projection maps the data range to NDC [-1,1], NDC maps to the
         // viewport), and likewise 1 data-unit-y -> (H / yRange) px.
-        const float xRange = std::max(1e-12f, xhi - xlo);
-        const float yRange = std::max(1e-12f, yhi - ylo);
+        const float xRange = std::max(1e-12f, std::abs(xhi - xlo));
+        const float yRange = std::max(1e-12f, std::abs(yhi - ylo));
         const float dataPerPxX = xRange / d->viewportW;
         const float dataPerPxY = yRange / d->viewportH;
 
@@ -2577,9 +2671,10 @@ void PlotView::mouseMoveEvent(QMouseEvent* event) {
         QPoint delta = event->pos() - d->lastMousePos;
         d->lastMousePos = event->pos();
 
-        if (!d->userViewBounds2d) {
+        if (!d->userXLimits || !d->userYLimits) {
             computeGridVertices();
-            d->userViewBounds2d = true;
+            d->userXLimits = true;
+            d->userYLimits = true;
         }
 
         if (d->interactionTool == InteractionTool::Pan) {
@@ -2963,17 +3058,22 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                                     !d->xAxisLabel.isEmpty(), !d->yAxisLabel.isEmpty(),
                                     d->showColorbar && d->hasColormappedData);
             double paAspect = std::max(1.0, pa.width()) / std::max(1.0, pa.height());
-            float w = projBounds.width(), h = projBounds.height();
+            float w = std::abs(projBounds.width());
+            float h = std::abs(projBounds.height());
             if (w > 1e-6f && h > 1e-6f) {
                 double dataAspect = static_cast<double>(w) / static_cast<double>(h);
                 if (dataAspect < paAspect) {
                     float targetW = static_cast<float>(h * paAspect);
                     float pad = (targetW - w) * 0.5f;
-                    projBounds.min.x() -= pad; projBounds.max.x() += pad;
+                    float direction = projBounds.width() >= 0.0f ? 1.0f : -1.0f;
+                    projBounds.min.x() -= direction * pad;
+                    projBounds.max.x() += direction * pad;
                 } else {
                     float targetH = static_cast<float>(w / paAspect);
                     float pad = (targetH - h) * 0.5f;
-                    projBounds.min.y() -= pad; projBounds.max.y() += pad;
+                    float direction = projBounds.height() >= 0.0f ? 1.0f : -1.0f;
+                    projBounds.min.y() -= direction * pad;
+                    projBounds.max.y() += direction * pad;
                 }
             }
         }
