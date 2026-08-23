@@ -174,6 +174,8 @@ jobs:
     name: Deploy Dev Website
     needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
+    env:
+      SKIGEN_PROJECT_PAT: ${{ secrets.SKIGEN_PROJECT_PAT }}
     steps:
       - uses: actions/checkout@v5
 
@@ -195,8 +197,7 @@ jobs:
         run: npm run build
 
       - name: Deploy to skigen-project.github.io/skigen-plot/dev/
-        env:
-          SKIGEN_PROJECT_PAT: ${{ secrets.SKIGEN_PROJECT_PAT }}
+        if: env.SKIGEN_PROJECT_PAT != ''
         run: |
           git config --global user.email "deploy@skigen-project.github.io"
           git config --global user.name "skigen-deploy"
@@ -211,3 +212,7 @@ jobs:
           git add .
           git commit -m "Deploy skigen-plot dev website from staging@${GITHUB_SHA::8}" --allow-empty
           git push origin main
+
+      - name: Report skipped deployment
+        if: env.SKIGEN_PROJECT_PAT == ''
+        run: echo "::notice::Dev website build passed; deployment skipped because SKIGEN_PROJECT_PAT is not configured."
