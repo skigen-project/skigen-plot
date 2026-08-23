@@ -84,6 +84,23 @@ auto finiteSampleIndices(std::size_t count, const Spans&... values)
     return indices;
 }
 
+auto finiteRange(std::span<const float> values)
+    -> std::optional<std::pair<float, float>>
+{
+    std::optional<std::pair<float, float>> range;
+    for (float value : values) {
+        if (!std::isfinite(value))
+            continue;
+        if (!range) {
+            range = std::pair{value, value};
+        } else {
+            range->first = std::min(range->first, value);
+            range->second = std::max(range->second, value);
+        }
+    }
+    return range;
+}
+
 // ── Per-series GPU state ───────────────────────────────────────────
 
 struct Series2D {
@@ -1340,6 +1357,8 @@ void PlotView::pieImpl(std::span<const float> values) {
 void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
                           Colormap cmap, float vmin, float vmax) {
     if (rows <= 0 || cols <= 0) return;
+    const auto dataRange = finiteRange(data);
+    if (!dataRange) return;
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
@@ -1350,13 +1369,9 @@ void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
     };
 
     // Auto data range unless an explicit [vmin, vmax) was supplied.
-    if (!(vmin < vmax)) {
-        vmin = at(0, 0); vmax = at(0, 0);
-        for (int c = 0; c < cols; ++c)
-            for (int r = 0; r < rows; ++r) {
-                float v = at(r, c);
-                vmin = std::min(vmin, v); vmax = std::max(vmax, v);
-            }
+    if (!std::isfinite(vmin) || !std::isfinite(vmax) || !(vmin < vmax)) {
+        vmin = dataRange->first;
+        vmax = dataRange->second;
     }
     const float range = std::max(vmax - vmin, 1e-12f);
 
@@ -1372,7 +1387,10 @@ void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
         float y0 = static_cast<float>(rows - 1 - r);
         float y1 = static_cast<float>(rows - r);
         for (int c = 0; c < cols; ++c) {
-            float t = (at(r, c) - vmin) / range;
+            const float value = at(r, c);
+            if (!std::isfinite(value))
+                continue;
+            float t = (value - vmin) / range;
             Eigen::Vector4f col = sampleColormap(cmap, t);
             float x0 = static_cast<float>(c);
             float x1 = static_cast<float>(c + 1);
@@ -1409,17 +1427,15 @@ void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
 void PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
                             int levels, Colormap cmap) {
     if (rows <= 0 || cols <= 0) return;
+    const auto dataRange = finiteRange(data);
+    if (!dataRange) return;
     levels = std::max(2, levels);
 
     auto at = [&](int r, int c) -> float {
         return data[static_cast<std::size_t>(c) * static_cast<std::size_t>(rows)
                     + static_cast<std::size_t>(r)];
     };
-    float vmin = at(0, 0), vmax = at(0, 0);
-    for (int c = 0; c < cols; ++c)
-        for (int r = 0; r < rows; ++r) {
-            float v = at(r, c); vmin = std::min(vmin, v); vmax = std::max(vmax, v);
-        }
+    const auto [vmin, vmax] = *dataRange;
     const float range = std::max(vmax - vmin, 1e-12f);
 
     auto& verts = d->heatmapVertices;
@@ -1433,7 +1449,10 @@ void PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
         float y0 = static_cast<float>(rows - 1 - r);
         float y1 = static_cast<float>(rows - r);
         for (int c = 0; c < cols; ++c) {
-            float tRaw = (at(r, c) - vmin) / range;
+            const float value = at(r, c);
+            if (!std::isfinite(value))
+                continue;
+            float tRaw = (value - vmin) / range;
             // Quantise to discrete bands (filled-contour look).
             int band = std::min(levels - 1, static_cast<int>(tRaw * fLevels));
             float t = (static_cast<float>(band) + 0.5f) / fLevels;
@@ -1472,6 +1491,8 @@ void PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
 void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
                            int levels, const PlotStyle& style) {
     if (rows < 2 || cols < 2) return;
+    const auto dataRange = finiteRange(data);
+    if (!dataRange) return;
     levels = std::max(1, levels);
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
@@ -1480,11 +1501,7 @@ void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
         return data[static_cast<std::size_t>(c) * static_cast<std::size_t>(rows)
                     + static_cast<std::size_t>(r)];
     };
-    float vmin = at(0, 0), vmax = at(0, 0);
-    for (int c = 0; c < cols; ++c)
-        for (int r = 0; r < rows; ++r) {
-            float v = at(r, c); vmin = std::min(vmin, v); vmax = std::max(vmax, v);
-        }
+    const auto [vmin, vmax] = *dataRange;
     if (vmax <= vmin) return;
 
     // Node position for grid index (r, c) — cell-centred to align with imshow.
@@ -1510,6 +1527,10 @@ void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
             for (int c = 0; c < cols - 1; ++c) {
                 float tl = at(r, c),     tr = at(r, c + 1);
                 float bl = at(r + 1, c), br = at(r + 1, c + 1);
+                if (!std::isfinite(tl) || !std::isfinite(tr)
+                    || !std::isfinite(bl) || !std::isfinite(br)) {
+                    continue;
+                }
                 int code = (tl > iso ? 8 : 0) | (tr > iso ? 4 : 0) |
                            (br > iso ? 2 : 0) | (bl > iso ? 1 : 0);
                 if (code == 0 || code == 15) continue;

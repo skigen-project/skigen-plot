@@ -244,7 +244,8 @@ public:
 
     /// @brief Draw matrix @p m as a colormapped grid of cells (row 0 at the
     ///   top, matching matplotlib's `imshow`). The data range is auto-scaled
-    ///   to [min, max] across @p m unless @p vmin < @p vmax is given.
+    ///   to [min, max] across finite cells unless @p vmin < @p vmax is given.
+    ///   Non-finite cells are omitted; all-invalid input leaves the view unchanged.
     template <typename Derived>
     void imshow(const Eigen::MatrixBase<Derived>& m,
                 Colormap cmap = Colormap::Viridis,
@@ -260,7 +261,8 @@ public:
 
     /// @brief Draw iso-lines of scalar field @p z at @p levels evenly-spaced
     ///   levels between the data min and max (marching squares). Cell (r, c)
-    ///   maps to grid coordinate (c, rows-1-r), matching imshow().
+    ///   maps to grid coordinate (c, rows-1-r), matching imshow(). Cells with
+    ///   non-finite corners are omitted.
     template <typename Derived>
     void contour(const Eigen::MatrixBase<Derived>& z, int levels = 8,
                  const PlotStyle& style = {})
@@ -271,8 +273,8 @@ public:
                     levels, style);
     }
 
-    /// @brief Filled contour: colour each cell by its value band using @p cmap
-    ///   (cell-level quantisation). Companion to contour().
+    /// @brief Filled contour: colour each finite cell by its value band using
+    ///   @p cmap (cell-level quantisation). Companion to contour().
     template <typename Derived>
     void contourf(const Eigen::MatrixBase<Derived>& z, int levels = 10,
                   Colormap cmap = Colormap::Viridis)

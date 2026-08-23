@@ -31,6 +31,8 @@ All notable changes to SkigenPlot will be documented in this file.
   and quiver fields, including grouped stem updates.
 - Shape, finite-coordinate, and index-range validation for 3D point clouds
   and triangle meshes.
+- NaN/Inf masking and finite color-range calculation for heatmaps and filled
+  or line contours.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

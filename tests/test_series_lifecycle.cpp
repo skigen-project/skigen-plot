@@ -212,6 +212,19 @@ int main(int argc, char* argv[])
     if (invalid3DView.is3DView())
         return 38;
 
+    Skigen::Plot::PlotView matrixView;
+    Eigen::MatrixXf invalidMatrix = Eigen::MatrixXf::Constant(
+        2, 2, std::numeric_limits<float>::quiet_NaN());
+    matrixView.imshow(invalidMatrix);
+    matrixView.contourf(invalidMatrix);
+    matrixView.contour(invalidMatrix);
+    if (matrixView.is2DView())
+        return 39;
+    invalidMatrix(0, 0) = 1.0f;
+    matrixView.imshow(invalidMatrix);
+    if (!matrixView.is2DView())
+        return 40;
+
     const auto stems = view.stem(x, y, {.label = "stems"});
     if (!stems || !view.containsSeries(stems)
         || !view.updateSeriesData(stems, x, updatedY)

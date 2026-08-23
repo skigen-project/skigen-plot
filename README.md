@@ -56,6 +56,8 @@ Creation returns an invalid handle when no usable data remains.
 Point clouds and meshes require finite `N x 3` vertices. Mesh faces require an
 `M x 3` index matrix whose values refer to existing vertices; invalid 3D input
 leaves the current view unchanged.
+Heatmaps and contours derive color ranges from finite cells and omit invalid
+cells. An all-invalid matrix leaves the current view unchanged.
 
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,

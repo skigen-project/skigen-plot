@@ -97,6 +97,10 @@ Point clouds accept finite `N x 3` matrices. Meshes additionally require an
 `M x 3` triangle-index matrix with every index in the vertex range. Invalid 3D
 input is a deterministic no-op and does not replace the current scene.
 
+Heatmaps and contour plots calculate ranges from finite matrix cells. Invalid
+heatmap and filled-contour cells are omitted, while contour cells are omitted
+when any corner is invalid. All-invalid matrices leave the view unchanged.
+
 A stem plot's vertical geometry and marker tips share one handle. Data, style,
 visibility, and removal operations therefore apply to the complete composite.
 
