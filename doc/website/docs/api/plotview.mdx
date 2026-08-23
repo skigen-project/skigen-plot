@@ -82,10 +82,10 @@ public:
 `PlotView` is the central class of SkigenPlot. It accepts Eigen matrix expressions directly — no manual data conversion needed. Data is interleaved into GPU vertex buffers and rendered using Qt's RHI abstraction layer.
 
 Line, scatter, histogram, bar, horizontal-bar, filled-area, step, error-bar,
-stem, and quiver creation returns an opaque `SeriesHandle`. Handles remain stable
-when other series are removed. Mutating or removing an invalid, stale, or
-foreign handle returns `false` and leaves the view unchanged. Creation with
-insufficient input returns an invalid handle.
+stem, box, violin, quiver, and pie creation returns an opaque `SeriesHandle`.
+Handles remain stable when other series are removed. Mutating or removing an
+invalid, stale, or foreign handle returns `false` and leaves the view unchanged.
+Creation with insufficient input returns an invalid handle.
 
 Vector inputs truncate mismatched arguments to the shortest required length.
 Handle-returning 2D plots discard samples containing NaN or infinity; filled
@@ -111,6 +111,9 @@ hexbin grid sizes are clamped to at least two.
 
 A stem plot's vertical geometry and marker tips share one handle. Data, style,
 visibility, and removal operations therefore apply to the complete composite.
+Box bodies and outliers, violin bodies and medians, and all pie wedges likewise
+share grouped handles. Their style, visibility, and removal operations apply to
+the complete composite; incompatible x/y data replacement returns `false`.
 
 Set a non-empty `PlotStyle::label` and call `setLegendVisible(true)` to show a
 theme-aware legend. `LegendPosition::Auto` selects the least occupied plot

@@ -249,25 +249,40 @@ int main(int argc, char* argv[])
         return 42;
 
     Skigen::Plot::PlotView pieView;
-    pieView.pie(invalidValues);
-    if (pieView.is2DView())
+    if (pieView.pie(invalidValues) || pieView.is2DView())
         return 43;
     Eigen::VectorXf pieValues(3);
     pieValues << 1.0f, std::numeric_limits<float>::infinity(), 2.0f;
-    pieView.pie(pieValues);
-    if (!pieView.is2DView())
+    const auto pie = pieView.pie(pieValues);
+    if (!pie || !pieView.is2DView()
+        || pieView.updateSeriesData(pie, x, y)
+        || !pieView.setSeriesVisible(pie, false)
+        || !pieView.setSeriesStyle(pie, {.opacity = 0.5f})
+        || !pieView.removeSeries(pie)
+        || pieView.containsSeries(pie)) {
         return 44;
+    }
 
     Skigen::Plot::PlotView statisticsView;
     const std::vector<Eigen::VectorXf> invalidGroups{invalidValues};
-    statisticsView.boxplot(invalidGroups);
-    statisticsView.violinplot(invalidGroups);
-    if (statisticsView.is2DView())
+    if (statisticsView.boxplot(invalidGroups)
+        || statisticsView.violinplot(invalidGroups)
+        || statisticsView.is2DView()) {
         return 45;
+    }
     const std::vector<Eigen::VectorXf> mixedGroups{invalidValues, y};
-    statisticsView.boxplot(mixedGroups);
-    if (!statisticsView.is2DView())
+    const auto boxes = statisticsView.boxplot(mixedGroups, {.label = "boxes"});
+    const auto violins = statisticsView.violinplot(mixedGroups,
+                                                    {.label = "violins"});
+    if (!boxes || !violins || boxes == violins || !statisticsView.is2DView()
+        || statisticsView.updateSeriesData(boxes, x, y)
+        || statisticsView.updateSeriesData(violins, x, y)
+        || !statisticsView.setSeriesStyle(boxes, {.opacity = 0.4f})
+        || !statisticsView.setSeriesVisible(violins, false)
+        || !statisticsView.removeSeries(boxes)
+        || statisticsView.containsSeries(boxes)) {
         return 46;
+    }
 
     Skigen::Plot::PlotView parameterView;
     if (!parameterView.hist(y, -1))

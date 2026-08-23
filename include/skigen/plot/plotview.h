@@ -237,9 +237,10 @@ public:
     /// @brief Draw a box-and-whisker for each group in @p groups, placed at
     ///   integer positions 0, 1, 2, … Box spans Q1–Q3, with the median line,
     ///   1.5·IQR whiskers, and outliers as points. Non-finite samples and empty
-    ///   groups are omitted; all-invalid input leaves the view unchanged.
-    void boxplot(const std::vector<Eigen::VectorXf>& groups,
-                 const PlotStyle& style = {});
+    ///   groups are omitted. Returns one handle for the complete composite, or
+    ///   an invalid handle when no finite group remains.
+    auto boxplot(const std::vector<Eigen::VectorXf>& groups,
+                 const PlotStyle& style = {}) -> SeriesHandle;
 
     // ── 2D heatmap / image (colormapped R×C matrix) ─────────────────
 
@@ -291,9 +292,10 @@ public:
 
     /// @brief Draw a violin (mirrored Gaussian-KDE density) for each group in
     ///   @p groups, placed at integer positions 0, 1, 2, … Non-finite samples
-    ///   and empty groups are omitted; all-invalid input leaves the view unchanged.
-    void violinplot(const std::vector<Eigen::VectorXf>& groups,
-                    const PlotStyle& style = {});
+    ///   and empty groups are omitted. Returns one handle for the complete
+    ///   composite, or an invalid handle when no finite group remains.
+    auto violinplot(const std::vector<Eigen::VectorXf>& groups,
+                    const PlotStyle& style = {}) -> SeriesHandle;
 
     // ── 2D quiver (vector field) ────────────────────────────────────
 
@@ -336,12 +338,13 @@ public:
 
     /// @brief Draw proportional wedges for finite positive @p values (normalised
     ///   to their sum), starting at the top and proceeding clockwise. Other
-    ///   values are omitted; no positive finite values leave the view unchanged.
+    ///   values are omitted. Returns one handle for all wedges, or an invalid
+    ///   handle when no positive finite values remain.
     template <typename Derived>
-    void pie(const Eigen::MatrixBase<Derived>& values)
+    auto pie(const Eigen::MatrixBase<Derived>& values) -> SeriesHandle
     {
         Eigen::VectorXf vf = values.derived().template cast<float>().eval();
-        pieImpl({vf.data(), static_cast<std::size_t>(vf.size())});
+        return pieImpl({vf.data(), static_cast<std::size_t>(vf.size())});
     }
 
     // ── 3D point cloud (N×3 matrix) ─────────────────────────────────
@@ -473,12 +476,15 @@ private:
                           const PlotStyle& style) -> SeriesHandle;
     auto addSeriesImpl(int kind, std::span<const float> x,
                        std::span<const float> y, const PlotStyle& style,
-                       SeriesHandle groupHandle = {})
+                       SeriesHandle groupHandle = {},
+                       bool supportsDataUpdate = true)
         -> SeriesHandle;
     auto updateSeriesDataImpl(SeriesHandle handle, std::span<const float> x,
                               std::span<const float> y) -> bool;
     auto addFillSeries(std::span<const float> triangleVertices,
-                       const PlotStyle& style) -> SeriesHandle;
+                       const PlotStyle& style,
+                       SeriesHandle groupHandle = {},
+                       bool supportsDataUpdate = false) -> SeriesHandle;
 
     auto histImpl(std::span<const float> values, int bins, bool density,
                   const PlotStyle& style) -> SeriesHandle;
@@ -506,7 +512,7 @@ private:
                     const PlotStyle& style) -> SeriesHandle;
     void hexbinImpl(std::span<const float> x, std::span<const float> y,
                     int gridsize, Colormap cmap);
-    void pieImpl(std::span<const float> values);
+    auto pieImpl(std::span<const float> values) -> SeriesHandle;
 
     void setPointCloudData(std::span<const float> data, int vertexCount,
                            const PlotStyle& style);

@@ -43,7 +43,8 @@ int main(int argc, char* argv[]) {
 ```
 
 `plot()`, `scatter()`, `hist()`, `bar()`, `barh()`, `fillBetween()`, `step()`,
-`errorbar()`, `stem()`, and `quiver()` return stable `SeriesHandle` values.
+`errorbar()`, `stem()`, `boxplot()`, `violinplot()`, `quiver()`, and `pie()`
+return stable `SeriesHandle` values.
 Use `updateSeriesData()`, `setSeriesStyle()`, `setSeriesVisible()`, and
 `removeSeries()` to modify one series without clearing the rest of the view.
 Visible labelled series can be shown in a theme-aware legend with automatic
@@ -61,7 +62,8 @@ cells. An all-invalid matrix leaves the current view unchanged.
 Hexbin omits non-finite coordinate pairs. Pie charts omit non-finite and
 non-positive weights; an all-invalid input leaves the view unchanged.
 Box and violin plots omit non-finite samples and empty groups while preserving
-the positions of valid groups.
+the positions of valid groups. Their component geometry, and all wedges of a
+pie chart, share one handle for styling, visibility, and removal.
 
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,

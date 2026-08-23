@@ -121,6 +121,7 @@ struct Series2D {
     bool hollow = false;
     MarkerShape marker = MarkerShape::Circle;
     bool visible = true;
+    bool supportsDataUpdate = true;
     QString label;
     bool dirty = true;
 
@@ -617,7 +618,8 @@ auto PlotView::addSeriesImpl(int kindInt,
                              std::span<const float> x,
                              std::span<const float> y,
                              const PlotStyle& style,
-                             SeriesHandle groupHandle) -> SeriesHandle {
+                             SeriesHandle groupHandle,
+                             bool supportsDataUpdate) -> SeriesHandle {
     auto kind = static_cast<SeriesKind>(kindInt);
     const auto count = std::min(x.size(), y.size());
     if (!d->has2D() && !d->has3D())
@@ -659,6 +661,7 @@ auto PlotView::addSeriesImpl(int kindInt,
     series.hollow = style.hollow;
     series.marker = style.marker;
     series.label = style.label;
+    series.supportsDataUpdate = supportsDataUpdate;
     series.dirty = true;
 
     if (d->pipelineReady) {
@@ -685,6 +688,8 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
                                     std::span<const float> y) -> bool {
     auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
     if (seriesIt == d->series2d.end())
+        return false;
+    if (!seriesIt->supportsDataUpdate)
         return false;
 
     const auto count = std::min(x.size(), y.size());
@@ -903,12 +908,14 @@ void PlotView::clearTelemetry() {
 }
 
 auto PlotView::addFillSeries(std::span<const float> triangleVertices,
-                             const PlotStyle& style) -> SeriesHandle {
+                             const PlotStyle& style,
+                             SeriesHandle groupHandle,
+                             bool supportsDataUpdate) -> SeriesHandle {
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
     Series2D series;
-    series.id = nextSeriesId();
+    series.id = groupHandle ? groupHandle.m_id : nextSeriesId();
     series.kind = SeriesKind::Fill;
     series.vertices.assign(triangleVertices.begin(), triangleVertices.end());
     series.vertexCount = static_cast<int>(series.vertices.size() / 2);
@@ -921,6 +928,7 @@ auto PlotView::addFillSeries(std::span<const float> triangleVertices,
         resolvedColor.w() = style.opacity;
     series.color = resolvedColor;
     series.label = style.label;
+    series.supportsDataUpdate = supportsDataUpdate;
     series.dirty = true;
 
     if (d->pipelineReady) {
@@ -1228,7 +1236,7 @@ auto PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
         mx.push_back(xi);
         my.push_back(yi);
     }
-    const auto handle = addFillSeries(verts, style);
+    const auto handle = addFillSeries(verts, style, {}, true);
     // Markers at the stem tops (re-use the resolved series colour).
     PlotStyle markerStyle = style;
     auto fillSeries = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
@@ -1237,13 +1245,13 @@ auto PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
     markerStyle.label.clear();
     addSeriesImpl(static_cast<int>(SeriesKind::Scatter),
                   {mx.data(), mx.size()}, {my.data(), my.size()}, markerStyle,
-                  handle);
+                  handle, true);
     return handle;
 }
 
-void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
-                       const PlotStyle& style) {
-    if (groups.empty()) return;
+auto PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
+                       const PlotStyle& style) -> SeriesHandle {
+    if (groups.empty()) return {};
 
     const float boxHalf = 0.3f;     // half box width in group-position units
     const float capHalf = 0.15f;    // whisker-cap half width
@@ -1310,26 +1318,29 @@ void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
         appendQuad(boxVerts, cx - capHalf, whiskHi - lineHalf, cx + capHalf, whiskHi + lineHalf);
         appendQuad(boxVerts, cx - capHalf, whiskLo - lineHalf, cx + capHalf, whiskLo + lineHalf);
     }
-    if (boxVerts.empty()) return;
+    if (boxVerts.empty()) return {};
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
     PlotStyle boxStyle = style;
     if (boxStyle.opacity >= 1.0f && !boxStyle.color)
         boxStyle.opacity = 0.55f;  // translucent body so the median reads
-    addFillSeries(boxVerts, boxStyle);
+    const auto handle = addFillSeries(boxVerts, boxStyle);
 
     if (!outX.empty()) {
         PlotStyle outStyle = style;
         outStyle.pointSize = 5.0f;
+        outStyle.label.clear();
         addSeriesImpl(static_cast<int>(SeriesKind::Scatter),
-                      {outX.data(), outX.size()}, {outY.data(), outY.size()}, outStyle);
+                      {outX.data(), outX.size()}, {outY.data(), outY.size()}, outStyle,
+                      handle, false);
     }
+    return handle;
 }
 
-void PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
-                          const PlotStyle& style) {
-    if (groups.empty()) return;
+auto PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
+                          const PlotStyle& style) -> SeriesHandle {
+    if (groups.empty()) return {};
 
     constexpr int kResolution = 48;     // vertical density samples
     const float maxHalfWidth = 0.38f;   // max violin half-width in position units
@@ -1392,21 +1403,24 @@ void PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
         medX.push_back(cx);
         medY.push_back(med);
     }
-    if (verts.empty()) return;
+    if (verts.empty()) return {};
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
     PlotStyle vStyle = style;
     if (vStyle.opacity >= 1.0f && !vStyle.color)
         vStyle.opacity = 0.6f;
-    addFillSeries(verts, vStyle);
+    const auto handle = addFillSeries(verts, vStyle);
 
     if (!medX.empty()) {
         PlotStyle medStyle = style;
         medStyle.pointSize = 5.0f;
+        medStyle.label.clear();
         addSeriesImpl(static_cast<int>(SeriesKind::Scatter),
-                      {medX.data(), medX.size()}, {medY.data(), medY.size()}, medStyle);
+                      {medX.data(), medX.size()}, {medY.data(), medY.size()}, medStyle,
+                      handle, false);
     }
+    return handle;
 }
 
 auto PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
@@ -1458,16 +1472,16 @@ auto PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
     return addFillSeries(verts, style);
 }
 
-void PlotView::pieImpl(std::span<const float> values) {
+auto PlotView::pieImpl(std::span<const float> values) -> SeriesHandle {
     const int n = static_cast<int>(values.size());
-    if (n == 0) return;
+    if (n == 0) return {};
 
     double total = 0.0;
     for (float value : values) {
         if (std::isfinite(value) && value > 0.0f)
             total += value;
     }
-    if (total <= 0.0f) return;
+    if (total <= 0.0f) return {};
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
@@ -1478,6 +1492,7 @@ void PlotView::pieImpl(std::span<const float> values) {
 
     // Each wedge becomes its own Fill series so it picks up a palette colour.
     float angle = pi * 0.5f;            // start at the top
+    SeriesHandle handle;
     for (int i = 0; i < n; ++i) {
         const float value = values[static_cast<std::size_t>(i)];
         if (!std::isfinite(value) || value <= 0.0f)
@@ -1497,7 +1512,7 @@ void PlotView::pieImpl(std::span<const float> values) {
                 cx + radius * std::cos(t1), cy + radius * std::sin(t1),
             });
         }
-        addFillSeries(verts, {});
+        handle = addFillSeries(verts, {}, handle);
         angle -= sweep;
     }
 
@@ -1509,6 +1524,7 @@ void PlotView::pieImpl(std::span<const float> values) {
     d->aspectEqual = true;
     d->gridDirty = true;
     update();
+    return handle;
 }
 
 void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,

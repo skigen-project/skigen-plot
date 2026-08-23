@@ -41,6 +41,8 @@ All notable changes to SkigenPlot will be documented in this file.
   contour levels, and hexbin grid size.
 - Portable triangle-based line strokes with effective per-series width, solid,
   dashed, dotted, and dash-dot styles, and preserved non-finite gaps.
+- Grouped stable handles for box plots, violin plots, and pie charts, with
+  composite style, visibility, and removal operations.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 
