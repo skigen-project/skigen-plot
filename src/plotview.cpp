@@ -2585,66 +2585,10 @@ void PlotView::computeGridVertices() {
     d->gridVertexCount = static_cast<int>(d->gridVertices.size()) / 2;
 
     if (d->showAxisArrows) {
-        auto appendLine2D = [&](float ax, float ay, float bx, float by) {
-            d->axisVertices.push_back(ax); d->axisVertices.push_back(ay);
-            d->axisVertices.push_back(bx); d->axisVertices.push_back(by);
-        };
-
-        // Arrowheads must look identical across both axes, i.e. share the
-        // same length and apex angle in *screen* (pixel) space. The data
-        // ranges and the widget aspect differ per axis, so convert a fixed
-        // pixel length/half-width into data units separately for each axis.
-        // Data->pixel scale: 1 data-unit-x -> (W / xRange) px (the ortho
-        // projection maps the data range to NDC [-1,1], NDC maps to the
-        // viewport), and likewise 1 data-unit-y -> (H / yRange) px.
-        const float xRange = std::max(1e-12f, std::abs(xhi - xlo));
-        const float yRange = std::max(1e-12f, std::abs(yhi - ylo));
-        const float dataPerPxX = xRange / d->viewportW;
-        const float dataPerPxY = yRange / d->viewportH;
-        const float xDirection = xhi >= xlo ? 1.0f : -1.0f;
-        const float yDirection = yhi >= ylo ? 1.0f : -1.0f;
-
-        constexpr float kArrowLenPx = 13.0f;       // tip-to-base length
-        constexpr float kArrowHalfWidthPx = 5.0f;  // half of the base width
-        constexpr float kTipInsetPx = 1.5f;
-
-        // Solid (filled) arrowheads: the grid/axis pipeline draws line
-        // segments only, so fill each triangular head with a fan of
-        // closely-spaced segments sweeping from the tip across the base.
-        constexpr int kArrowFanSteps = 14;
-        auto fillArrow2D = [&](float tipX, float tipY,
-                               float baseAX, float baseAY,
-                               float baseBX, float baseBY) {
-            for (int i = 0; i <= kArrowFanSteps; ++i) {
-                float s = static_cast<float>(i) / static_cast<float>(kArrowFanSteps);
-                float px = baseAX + (baseBX - baseAX) * s;
-                float py = baseAY + (baseBY - baseAY) * s;
-                appendLine2D(tipX, tipY, px, py);
-            }
-        };
-
-        // Keep edge-aligned arrowheads inside the viewport rather than
-        // centering half their width outside the scissor rectangle.
-        const float xHeadLen = kArrowLenPx * dataPerPxX;
-        const float xHeadHalf = kArrowHalfWidthPx * dataPerPxY;
-        const float xTip = xhi - xDirection * kTipInsetPx * dataPerPxX;
-        fillArrow2D(xTip, ylo,
-                    xTip - xDirection * xHeadLen, ylo,
-                    xTip - xDirection * xHeadLen,
-                    ylo + yDirection * 2.0f * xHeadHalf);
-
-        const float yHeadLen = kArrowLenPx * dataPerPxY;
-        const float yHeadHalf = kArrowHalfWidthPx * dataPerPxX;
-        const float yTip = yhi - yDirection * kTipInsetPx * dataPerPxY;
-        fillArrow2D(xlo, yTip,
-                    xlo, yTip - yDirection * yHeadLen,
-                    xlo + xDirection * 2.0f * yHeadHalf,
-                    yTip - yDirection * yHeadLen);
-
         d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
-        d->axisVertices.push_back(xTip); d->axisVertices.push_back(ylo);
+        d->axisVertices.push_back(xhi); d->axisVertices.push_back(ylo);
         d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
-        d->axisVertices.push_back(xlo); d->axisVertices.push_back(yTip);
+        d->axisVertices.push_back(xlo); d->axisVertices.push_back(yhi);
     } else {
         d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
         d->axisVertices.push_back(xhi); d->axisVertices.push_back(ylo);
@@ -2842,6 +2786,28 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
             painter.restore();
         }
 
+        if (d->showAxisArrows) {
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(axisColor);
+
+            constexpr double arrowLength = 10.0;
+            constexpr double arrowHalfWidth = 3.5;
+            const QPointF xBase(plotArea.right() + 1.0, plotArea.bottom());
+            painter.drawPolygon(QPolygonF{
+                QPointF(xBase.x() + arrowLength, xBase.y()),
+                QPointF(xBase.x(), xBase.y() - arrowHalfWidth),
+                QPointF(xBase.x(), xBase.y() + arrowHalfWidth)});
+
+            const QPointF yBase(plotArea.left(), plotArea.top() - 1.0);
+            painter.drawPolygon(QPolygonF{
+                QPointF(yBase.x(), yBase.y() - arrowLength),
+                QPointF(yBase.x() - arrowHalfWidth, yBase.y()),
+                QPointF(yBase.x() + arrowHalfWidth, yBase.y())});
+            painter.restore();
+        }
+
         // ── Colorbar legend (imshow / contourf) ────────────────────
         if (d->showColorbar && d->hasColormappedData) {
             const double barW = 14.0;
@@ -2979,12 +2945,53 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                     + rowHeight * (static_cast<double>(i) + 0.5);
                 const double sampleLeft = legendRect.left() + padding;
                 painter.setPen(QPen(colorFromVec(entry.color), 2.0));
-                painter.setBrush(colorFromVec(entry.color));
                 if (entry.kind == SeriesKind::Scatter) {
-                    painter.drawEllipse(
-                        QPointF(sampleLeft + sampleWidth * 0.5, rowCenter),
-                        3.5, 3.5);
+                    const QColor markerColor = colorFromVec(entry.color);
+                    const QPointF center(sampleLeft + sampleWidth * 0.5, rowCenter);
+                    const double radius = std::clamp(
+                        static_cast<double>(entry.pointSize) * 0.45, 3.5, 5.0);
+                    QPen markerPen(markerColor, 1.5);
+                    markerPen.setCapStyle(Qt::RoundCap);
+                    painter.setPen(markerPen);
+                    painter.setBrush(entry.hollow ? Qt::NoBrush : QBrush(markerColor));
+                    switch (entry.marker) {
+                        case MarkerShape::Circle:
+                            painter.drawEllipse(center, radius, radius);
+                            break;
+                        case MarkerShape::Square:
+                            painter.drawRect(QRectF(center.x() - radius,
+                                                    center.y() - radius,
+                                                    radius * 2.0, radius * 2.0));
+                            break;
+                        case MarkerShape::Triangle: {
+                            QPolygonF triangle;
+                            triangle << QPointF(center.x(), center.y() - radius)
+                                     << QPointF(center.x() + radius, center.y() + radius)
+                                     << QPointF(center.x() - radius, center.y() + radius);
+                            painter.drawPolygon(triangle);
+                            break;
+                        }
+                        case MarkerShape::Plus:
+                            painter.setBrush(Qt::NoBrush);
+                            painter.drawLine(QPointF(center.x() - radius, center.y()),
+                                             QPointF(center.x() + radius, center.y()));
+                            painter.drawLine(QPointF(center.x(), center.y() - radius),
+                                             QPointF(center.x(), center.y() + radius));
+                            break;
+                        case MarkerShape::Cross:
+                            painter.setBrush(Qt::NoBrush);
+                            painter.drawLine(QPointF(center.x() - radius,
+                                                     center.y() - radius),
+                                             QPointF(center.x() + radius,
+                                                     center.y() + radius));
+                            painter.drawLine(QPointF(center.x() - radius,
+                                                     center.y() + radius),
+                                             QPointF(center.x() + radius,
+                                                     center.y() - radius));
+                            break;
+                    }
                 } else if (entry.kind == SeriesKind::Fill) {
+                    painter.setBrush(colorFromVec(entry.color));
                     painter.drawRect(QRectF(sampleLeft, rowCenter - 3.0,
                                             sampleWidth, 6.0));
                 } else {
@@ -3889,8 +3896,9 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                   {1.0f, 0}, u);
 
     if (is2D) {
+        const float viewportY = static_cast<float>(sz.height() - plotArea.bottom());
         cb->setViewport({static_cast<float>(plotArea.x()),
-                         static_cast<float>(plotArea.y()),
+                         viewportY,
                          static_cast<float>(plotArea.width()),
                          static_cast<float>(plotArea.height())});
     } else {

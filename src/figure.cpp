@@ -148,19 +148,18 @@ auto Figure::save(const QString& path, int width, int height) -> bool {
 auto Figure::saveThemed(const QString& stem, int width, int height) -> bool {
     const Theme original = d->view->theme();
 
-    struct Variant { const char* suffix; Theme theme; bool plainSpines; };
+    struct Variant { const char* suffix; Theme theme; };
     const std::array<Variant, 4> variants = {{
-        {"_paper.png", Theme::paper(),          true},   // white + Skigen palette
-        {"_mpl.png",   Theme::matplotlibStyle(), true},  // white + tab10 palette
-        {"_dark.png",  Theme::dark(),           false},
-        {"_light.png", Theme::light(),          false},
+        {"_paper.png", Theme::paper()},           // white + Skigen palette
+        {"_mpl.png",   Theme::matplotlibStyle()}, // white + tab10 palette
+        {"_dark.png",  Theme::dark()},
+        {"_light.png", Theme::light()},
     }};
 
     bool all_ok = true;
     for (const auto& v : variants) {
         d->view->setTheme(v.theme);
-        // The clean paper/matplotlib look uses plain spines (no arrowheads).
-        d->view->setAxisArrowsVisible(!v.plainSpines);
+        d->view->setAxisArrowsVisible(true);
         if (!save(stem + QString::fromLatin1(v.suffix), width, height))
             all_ok = false;
     }

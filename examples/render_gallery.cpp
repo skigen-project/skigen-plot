@@ -540,7 +540,7 @@ int main(int argc, char* argv[]) {
         view.setXScale(Skigen::Plot::AxisScale::Linear);
         view.setYScale(Skigen::Plot::AxisScale::Linear);
         view.setColorbarVisible(false);  // default; colormapped steps enable it
-        view.setAxisArrowsVisible(false);
+        view.setAxisArrowsVisible(true);
         step.setup(view);
         view.update();
 
