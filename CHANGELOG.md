@@ -27,6 +27,8 @@ All notable changes to SkigenPlot will be documented in this file.
   rendering for closed shapes.
 - Deterministic finite-data filtering for line, scatter, series updates, and
   histograms; creation fails predictably when no usable values remain.
+- Finite-sample filtering for bars, filled areas, steps, error bars, stems,
+  and quiver fields, including grouped stem updates.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

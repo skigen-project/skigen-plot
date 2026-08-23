@@ -133,8 +133,8 @@ public:
 
     // ── 2D bar / horizontal bar (adds a filled series) ──────────────
 
-    /// @brief Vertical bars of height @p heights at positions @p x. Returns
-    ///   an invalid handle when there are no paired values.
+    /// @brief Vertical bars of height @p heights at positions @p x. Non-finite
+    ///   pairs are ignored. Returns an invalid handle when none remain.
     template <typename DerivedX, typename DerivedH>
     auto bar(const Eigen::MatrixBase<DerivedX>& x,
              const Eigen::MatrixBase<DerivedH>& heights,
@@ -148,8 +148,8 @@ public:
                        width, /*horizontal=*/false, style);
     }
 
-    /// @brief Horizontal bars of length @p widths at positions @p y. Returns
-    ///   an invalid handle when there are no paired values.
+    /// @brief Horizontal bars of length @p widths at positions @p y. Non-finite
+    ///   pairs are ignored. Returns an invalid handle when none remain.
     template <typename DerivedY, typename DerivedW>
     auto barh(const Eigen::MatrixBase<DerivedY>& y,
               const Eigen::MatrixBase<DerivedW>& widths,
@@ -165,8 +165,9 @@ public:
 
     // ── 2D filled area between two curves ───────────────────────────
 
-    /// @brief Fill the region between @p y0 and @p y1 over @p x. Returns an
-    ///   invalid handle when fewer than two triplets are available.
+    /// @brief Fill the region between @p y0 and @p y1 over @p x. Segments with
+    ///   non-finite endpoints are omitted. Returns an invalid handle when no
+    ///   finite segment remains.
     template <typename DerivedX, typename DerivedY0, typename DerivedY1>
     auto fillBetween(const Eigen::MatrixBase<DerivedX>& x,
                      const Eigen::MatrixBase<DerivedY0>& y0,
@@ -184,8 +185,8 @@ public:
 
     // ── 2D step plot (piecewise-constant line) ──────────────────────
 
-    /// @brief Piecewise-constant line through (@p x, @p y). Returns an invalid
-    ///   handle when there are no paired values.
+    /// @brief Piecewise-constant line through finite (@p x, @p y) pairs.
+    ///   Returns an invalid handle when no finite pair remains.
     template <typename DerivedX, typename DerivedY>
     auto step(const Eigen::MatrixBase<DerivedX>& x,
               const Eigen::MatrixBase<DerivedY>& y,
@@ -200,7 +201,8 @@ public:
     // ── 2D error bars ───────────────────────────────────────────────
 
     /// @brief Symmetric vertical error bars of half-height @p yerr at (x, y).
-    ///   Returns an invalid handle when there are no complete triplets.
+    ///   Non-finite triplets are ignored; returns an invalid handle when none
+    ///   remain.
     template <typename DerivedX, typename DerivedY, typename DerivedE>
     auto errorbar(const Eigen::MatrixBase<DerivedX>& x,
                   const Eigen::MatrixBase<DerivedY>& y,
@@ -217,8 +219,8 @@ public:
 
     // ── 2D stem plot (baseline-anchored impulses) ──────────────────
 
-    /// @brief Draw vertical stems from y=0 to each (@p x, @p y) with a marker
-    ///   at the top of each stem.
+    /// @brief Draw vertical stems from y=0 to each finite (@p x, @p y) pair
+    ///   with a marker at the top. Returns an invalid handle when none remain.
     template <typename DerivedX, typename DerivedY>
     auto stem(const Eigen::MatrixBase<DerivedX>& x,
               const Eigen::MatrixBase<DerivedY>& y,
@@ -291,7 +293,8 @@ public:
     // ── 2D quiver (vector field) ────────────────────────────────────
 
     /// @brief Draw arrows at (@p x, @p y) with components (@p u, @p v).
-    ///   Returns an invalid handle when there are no complete vector samples.
+    ///   Non-finite and zero-length vectors are omitted; returns an invalid
+    ///   handle when no drawable vector remains.
     template <typename DX, typename DY, typename DU, typename DV>
     auto quiver(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
                 const Eigen::MatrixBase<DU>& u, const Eigen::MatrixBase<DV>& v,

@@ -71,6 +71,19 @@ static auto loadShader(const QString& path)
     return shader;
 }
 
+template <typename... Spans>
+auto finiteSampleIndices(std::size_t count, const Spans&... values)
+    -> std::vector<std::size_t>
+{
+    std::vector<std::size_t> indices;
+    indices.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        if ((std::isfinite(values[i]) && ...))
+            indices.push_back(i);
+    }
+    return indices;
+}
+
 // ── Per-series GPU state ───────────────────────────────────────────
 
 struct Series2D {
@@ -557,10 +570,7 @@ auto PlotView::addLineSeries(std::span<const float> x,
                              std::span<const float> y,
                              const PlotStyle& style) -> SeriesHandle {
     const auto count = std::min(x.size(), y.size());
-    if (std::ranges::none_of(std::views::iota(std::size_t{0}, count),
-                             [&](std::size_t i) {
-                                 return std::isfinite(x[i]) && std::isfinite(y[i]);
-                             })) {
+    if (finiteSampleIndices(count, x, y).empty()) {
         return {};
     }
     return addSeriesImpl(static_cast<int>(SeriesKind::Line), x, y, style);
@@ -570,10 +580,7 @@ auto PlotView::addScatterSeries(std::span<const float> x,
                                 std::span<const float> y,
                                 const PlotStyle& style) -> SeriesHandle {
     const auto count = std::min(x.size(), y.size());
-    if (std::ranges::none_of(std::views::iota(std::size_t{0}, count),
-                             [&](std::size_t i) {
-                                 return std::isfinite(x[i]) && std::isfinite(y[i]);
-                             })) {
+    if (finiteSampleIndices(count, x, y).empty()) {
         return {};
     }
     return addSeriesImpl(static_cast<int>(SeriesKind::Scatter), x, y, style);
@@ -645,26 +652,33 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
         return series.id == handle.m_id && series.kind == SeriesKind::Scatter;
     });
     if (seriesIt->kind == SeriesKind::Fill && scatterIt != d->series2d.end()) {
+        const auto indices = finiteSampleIndices(count, x, y);
         seriesIt->vertices.clear();
-        seriesIt->vertices.reserve(count * 12);
-        scatterIt->vertices.resize(count * 2);
+        seriesIt->vertices.reserve(indices.size() * 12);
+        scatterIt->vertices.clear();
+        scatterIt->vertices.reserve(indices.size() * 2);
         float stemHalf = 1e-6f;
-        if (count > 0) {
-            const auto [xMin, xMax] = std::ranges::minmax_element(x.first(count));
-            stemHalf = std::max(*xMax - *xMin, 1e-6f) * 0.0015f;
+        if (!indices.empty()) {
+            float xMin = x[indices.front()];
+            float xMax = xMin;
+            for (std::size_t i : indices) {
+                xMin = std::min(xMin, x[i]);
+                xMax = std::max(xMax, x[i]);
+            }
+            stemHalf = std::max(xMax - xMin, 1e-6f) * 0.0015f;
         }
-        for (std::size_t i = 0; i < count; ++i) {
+        for (std::size_t i : indices) {
             const float left = x[i] - stemHalf;
             const float right = x[i] + stemHalf;
             seriesIt->vertices.insert(seriesIt->vertices.end(), {
                 left, 0.0f, right, 0.0f, right, y[i],
                 left, 0.0f, right, y[i], left, y[i]
             });
-            scatterIt->vertices[i * 2] = x[i];
-            scatterIt->vertices[i * 2 + 1] = y[i];
+            scatterIt->vertices.push_back(x[i]);
+            scatterIt->vertices.push_back(y[i]);
         }
-        seriesIt->vertexCount = static_cast<int>(count * 6);
-        scatterIt->vertexCount = static_cast<int>(count);
+        seriesIt->vertexCount = static_cast<int>(indices.size() * 6);
+        scatterIt->vertexCount = static_cast<int>(indices.size());
         seriesIt->dirty = true;
         scatterIt->dirty = true;
         recomputeBounds();
@@ -933,15 +947,16 @@ auto PlotView::barImpl(std::span<const float> positions,
                        std::span<const float> sizes,
                        float width, bool horizontal,
                        const PlotStyle& style) -> SeriesHandle {
-    const int n = static_cast<int>(std::min(positions.size(), sizes.size()));
-    if (n == 0) return {};
+    const auto count = std::min(positions.size(), sizes.size());
+    const auto indices = finiteSampleIndices(count, positions, sizes);
+    if (indices.empty() || !std::isfinite(width)) return {};
 
     const float half = width * 0.5f;
     std::vector<float> verts;
-    verts.reserve(static_cast<std::size_t>(n) * 12);
-    for (int i = 0; i < n; ++i) {
-        float p = positions[static_cast<std::size_t>(i)];
-        float s = sizes[static_cast<std::size_t>(i)];
+    verts.reserve(indices.size() * 12);
+    for (std::size_t i : indices) {
+        float p = positions[i];
+        float s = sizes[i];
         if (horizontal)
             appendQuad(verts, 0.0f, p - half, s, p + half);
         else
@@ -964,12 +979,18 @@ auto PlotView::fillBetweenImpl(std::span<const float> x,
         float xb = x[static_cast<std::size_t>(i + 1)];
         float a0 = y0[static_cast<std::size_t>(i)],     a1 = y1[static_cast<std::size_t>(i)];
         float b0 = y0[static_cast<std::size_t>(i + 1)], b1 = y1[static_cast<std::size_t>(i + 1)];
+        if (!std::isfinite(xa) || !std::isfinite(xb)
+            || !std::isfinite(a0) || !std::isfinite(a1)
+            || !std::isfinite(b0) || !std::isfinite(b1)) {
+            continue;
+        }
         // Quad (xa,a0)-(xb,b0)-(xb,b1)-(xa,a1) as two triangles.
         verts.insert(verts.end(), {
             xa, a0,  xb, b0,  xb, b1,
             xa, a0,  xb, b1,  xa, a1,
         });
     }
+    if (verts.empty()) return {};
     PlotStyle s = style;
     if (s.opacity >= 1.0f && !s.color) s.opacity = 0.4f; // translucent band by default
     return addFillSeries(verts, s);
@@ -977,19 +998,21 @@ auto PlotView::fillBetweenImpl(std::span<const float> x,
 
 auto PlotView::stepImpl(std::span<const float> x, std::span<const float> y,
                         const PlotStyle& style) -> SeriesHandle {
-    const int n = static_cast<int>(std::min(x.size(), y.size()));
-    if (n == 0) return {};
+    const auto count = std::min(x.size(), y.size());
+    const auto indices = finiteSampleIndices(count, x, y);
+    if (indices.empty()) return {};
     // Expand to a piecewise-constant polyline: (x0,y0)-(x1,y0)-(x1,y1)-...
     std::vector<float> xs, ys;
-    xs.reserve(static_cast<std::size_t>(n) * 2);
-    ys.reserve(static_cast<std::size_t>(n) * 2);
-    for (int i = 0; i < n; ++i) {
-        if (i > 0) {  // horizontal tread to the new x at the previous y
-            xs.push_back(x[static_cast<std::size_t>(i)]);
-            ys.push_back(y[static_cast<std::size_t>(i - 1)]);
+    xs.reserve(indices.size() * 2);
+    ys.reserve(indices.size() * 2);
+    for (std::size_t position = 0; position < indices.size(); ++position) {
+        const std::size_t i = indices[position];
+        if (position > 0) {  // horizontal tread to the new x at the previous y
+            xs.push_back(x[i]);
+            ys.push_back(y[indices[position - 1]]);
         }
-        xs.push_back(x[static_cast<std::size_t>(i)]);
-        ys.push_back(y[static_cast<std::size_t>(i)]);
+        xs.push_back(x[i]);
+        ys.push_back(y[i]);
     }
     return addSeriesImpl(static_cast<int>(SeriesKind::Line),
                          {xs.data(), xs.size()}, {ys.data(), ys.size()}, style);
@@ -999,24 +1022,25 @@ auto PlotView::errorbarImpl(std::span<const float> x,
                             std::span<const float> y,
                             std::span<const float> yerr,
                             const PlotStyle& style) -> SeriesHandle {
-    const int n = static_cast<int>(std::min({x.size(), y.size(), yerr.size()}));
-    if (n == 0) return {};
+    const auto count = std::min({x.size(), y.size(), yerr.size()});
+    const auto indices = finiteSampleIndices(count, x, y, yerr);
+    if (indices.empty()) return {};
 
     // Whisker thickness / cap width as a fraction of the data x-range.
-    float xlo = x[0], xhi = x[0];
-    for (int i = 0; i < n; ++i) { xlo = std::min(xlo, x[static_cast<std::size_t>(i)]);
-                                  xhi = std::max(xhi, x[static_cast<std::size_t>(i)]); }
+    float xlo = x[indices.front()], xhi = x[indices.front()];
+    for (std::size_t i : indices) { xlo = std::min(xlo, x[i]);
+                                    xhi = std::max(xhi, x[i]); }
     float xspan = std::max(xhi - xlo, 1e-6f);
     const float stemHalf = xspan * 0.0015f;  // half-thickness of the vertical stem
     const float capHalf  = xspan * 0.010f;   // half-width of the end caps
     const float capThick = xspan * 0.0015f;
 
     std::vector<float> verts;
-    verts.reserve(static_cast<std::size_t>(n) * 36);
-    for (int i = 0; i < n; ++i) {
-        float xi = x[static_cast<std::size_t>(i)];
-        float yi = y[static_cast<std::size_t>(i)];
-        float ei = std::abs(yerr[static_cast<std::size_t>(i)]);
+    verts.reserve(indices.size() * 36);
+    for (std::size_t i : indices) {
+        float xi = x[i];
+        float yi = y[i];
+        float ei = std::abs(yerr[i]);
         appendQuad(verts, xi - stemHalf, yi - ei, xi + stemHalf, yi + ei);   // vertical stem
         appendQuad(verts, xi - capHalf, yi + ei - capThick, xi + capHalf, yi + ei + capThick); // top cap
         appendQuad(verts, xi - capHalf, yi - ei - capThick, xi + capHalf, yi - ei + capThick); // bottom cap
@@ -1026,24 +1050,28 @@ auto PlotView::errorbarImpl(std::span<const float> x,
 
 auto PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
                         const PlotStyle& style) -> SeriesHandle {
-    const int n = static_cast<int>(std::min(x.size(), y.size()));
-    if (n == 0) return {};
+    const auto count = std::min(x.size(), y.size());
+    const auto indices = finiteSampleIndices(count, x, y);
+    if (indices.empty()) return {};
 
-    float xlo = x[0], xhi = x[0];
-    for (int i = 0; i < n; ++i) { xlo = std::min(xlo, x[static_cast<std::size_t>(i)]);
-                                  xhi = std::max(xhi, x[static_cast<std::size_t>(i)]); }
+    float xlo = x[indices.front()], xhi = x[indices.front()];
+    for (std::size_t i : indices) { xlo = std::min(xlo, x[i]);
+                                    xhi = std::max(xhi, x[i]); }
     const float stemHalf = std::max(xhi - xlo, 1e-6f) * 0.0015f;
 
     // Thin vertical quads from the baseline (y=0) to each sample.
     std::vector<float> verts;
-    verts.reserve(static_cast<std::size_t>(n) * 12);
-    std::vector<float> mx(static_cast<std::size_t>(n)), my(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i) {
-        float xi = x[static_cast<std::size_t>(i)];
-        float yi = y[static_cast<std::size_t>(i)];
+    verts.reserve(indices.size() * 12);
+    std::vector<float> mx;
+    std::vector<float> my;
+    mx.reserve(indices.size());
+    my.reserve(indices.size());
+    for (std::size_t i : indices) {
+        float xi = x[i];
+        float yi = y[i];
         appendQuad(verts, xi - stemHalf, 0.0f, xi + stemHalf, yi);
-        mx[static_cast<std::size_t>(i)] = xi;
-        my[static_cast<std::size_t>(i)] = yi;
+        mx.push_back(xi);
+        my.push_back(yi);
     }
     const auto handle = addFillSeries(verts, style);
     // Markers at the stem tops (re-use the resolved series colour).
@@ -1216,25 +1244,26 @@ void PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
 auto PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
                           std::span<const float> u, std::span<const float> v,
                           const PlotStyle& style) -> SeriesHandle {
-    const int n = static_cast<int>(std::min({x.size(), y.size(), u.size(), v.size()}));
-    if (n == 0) return {};
+    const auto count = std::min({x.size(), y.size(), u.size(), v.size()});
+    const auto indices = finiteSampleIndices(count, x, y, u, v);
+    if (indices.empty()) return {};
 
     // Shaft thickness / arrowhead size as a fraction of the mean vector length.
     float meanLen = 0.0f;
-    for (int i = 0; i < n; ++i) {
-        float ui = u[static_cast<std::size_t>(i)], vi = v[static_cast<std::size_t>(i)];
+    for (std::size_t i : indices) {
+        float ui = u[i], vi = v[i];
         meanLen += std::sqrt(ui * ui + vi * vi);
     }
-    meanLen = std::max(meanLen / static_cast<float>(n), 1e-6f);
+    meanLen = std::max(meanLen / static_cast<float>(indices.size()), 1e-6f);
     const float shaftHalf = meanLen * 0.04f;
     const float headLen = meanLen * 0.30f;
     const float headHalf = meanLen * 0.16f;
 
     std::vector<float> verts;
-    verts.reserve(static_cast<std::size_t>(n) * 18);
-    for (int i = 0; i < n; ++i) {
-        float px = x[static_cast<std::size_t>(i)], py = y[static_cast<std::size_t>(i)];
-        float ux = u[static_cast<std::size_t>(i)], uy = v[static_cast<std::size_t>(i)];
+    verts.reserve(indices.size() * 18);
+    for (std::size_t i : indices) {
+        float px = x[i], py = y[i];
+        float ux = u[i], uy = v[i];
         float len = std::sqrt(ux * ux + uy * uy);
         if (len < 1e-9f) continue;
         float dx = ux / len, dy = uy / len;     // unit direction
@@ -1257,6 +1286,7 @@ auto PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
             baseX - nx * headHalf, baseY - ny * headHalf,
         });
     }
+    if (verts.empty()) return {};
     return addFillSeries(verts, style);
 }
 

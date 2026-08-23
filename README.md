@@ -49,9 +49,10 @@ Use `updateSeriesData()`, `setSeriesStyle()`, `setSeriesVisible()`, and
 Visible labelled series can be shown in a theme-aware legend with automatic
 or explicit corner placement.
 
-Line and scatter inputs are truncated to the shorter vector and non-finite
-coordinate pairs are discarded. Histograms likewise ignore non-finite
-observations. Creation returns an invalid handle when no usable data remains.
+Vector inputs are truncated to the shortest required vector. Non-finite
+samples are discarded by handle-returning 2D plots, while filled areas omit
+segments with invalid endpoints. Histograms ignore non-finite observations.
+Creation returns an invalid handle when no usable data remains.
 
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,

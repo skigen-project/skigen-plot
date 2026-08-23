@@ -155,6 +155,17 @@ int main(int argc, char* argv[])
     if (view.hist(histogramValues, 2))
         return 36;
 
+    Eigen::VectorXf invalidValues = Eigen::VectorXf::Constant(
+        3, std::numeric_limits<float>::quiet_NaN());
+    if (view.bar(x, invalidValues) || view.barh(x, invalidValues)
+        || view.fillBetween(x, invalidValues, y)
+        || view.step(x, invalidValues)
+        || view.errorbar(x, y, invalidValues)
+        || view.stem(x, invalidValues)
+        || view.quiver(x, y, invalidValues, y)) {
+        return 37;
+    }
+
     const auto bars = view.bar(x, y, 0.8f, {.label = "bars"});
     const auto horizontalBars = view.barh(x, y);
     if (!bars || !horizontalBars || bars == horizontalBars
@@ -190,6 +201,7 @@ int main(int argc, char* argv[])
     const auto stems = view.stem(x, y, {.label = "stems"});
     if (!stems || !view.containsSeries(stems)
         || !view.updateSeriesData(stems, x, updatedY)
+        || !view.updateSeriesData(stems, x, invalidValues)
         || !view.setSeriesStyle(stems, {.label = "updated stems",
                                         .marker = Skigen::Plot::MarkerShape::Cross})
         || !view.setSeriesVisible(stems, false)
