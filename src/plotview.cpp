@@ -534,37 +534,6 @@ static void appendLine3D(std::vector<float>& out,
     out.insert(out.end(), {a.x(), a.y(), a.z(), b.x(), b.y(), b.z()});
 }
 
-static void appendCone3D(std::vector<float>& out,
-                         const Eigen::Vector3f& tip,
-                         const Eigen::Vector3f& direction,
-                         float length,
-                         float radius) {
-    Eigen::Vector3f axis = direction.normalized();
-    Eigen::Vector3f helper = std::abs(axis.dot(Eigen::Vector3f::UnitY())) > 0.92f
-        ? Eigen::Vector3f::UnitX()
-        : Eigen::Vector3f::UnitY();
-    Eigen::Vector3f u = axis.cross(helper).normalized();
-    Eigen::Vector3f v = axis.cross(u).normalized();
-    Eigen::Vector3f baseCenter = tip - axis * length;
-
-    static constexpr int kSegments = 14;
-    std::array<Eigen::Vector3f, kSegments> ring;
-    for (int i = 0; i < kSegments; ++i) {
-        float t = 2.0f * std::numbers::pi_v<float>
-            * static_cast<float>(i) / static_cast<float>(kSegments);
-        ring[static_cast<std::size_t>(i)] = baseCenter
-            + radius * (std::cos(t) * u + std::sin(t) * v);
-    }
-
-    for (int i = 0; i < kSegments; ++i) {
-        const auto& a = ring[static_cast<std::size_t>(i)];
-        const auto& b = ring[static_cast<std::size_t>((i + 1) % kSegments)];
-        appendLine3D(out, a, b);
-        if (i % 2 == 0)
-            appendLine3D(out, tip, a);
-    }
-}
-
 static auto computeGuide3DVertices(const BoundingBox3D& bounds,
                                    const Camera3D& camera) -> std::vector<float> {
     auto b = bounds.expanded(0.04f);
@@ -627,33 +596,18 @@ static auto computeGuide3DVertices(const BoundingBox3D& bounds,
 
     float xTip = eye.x() >= center.x() ? hi.x() + dx : lo.x() - dx;
     float xBase = eye.x() >= center.x() ? hi.x() : lo.x();
-    float xSign = eye.x() >= center.x() ? 1.f : -1.f;
-    float xConeLength = dx * 0.48f;
     Eigen::Vector3f xConeTip = p(xTip, backY, backZ);
-    Eigen::Vector3f xConeAxis(xSign, 0.f, 0.f);
-    appendLine3D(out, p(xBase, backY, backZ), xConeTip - xConeAxis * xConeLength);
-    appendCone3D(out, xConeTip, xConeAxis, xConeLength,
-                 std::max(dy, dz) * 0.14f);
+    appendLine3D(out, p(xBase, backY, backZ), xConeTip);
 
     float yTip = eye.y() >= center.y() ? hi.y() + dy : lo.y() - dy;
     float yBase = eye.y() >= center.y() ? hi.y() : lo.y();
-    float ySign = eye.y() >= center.y() ? 1.f : -1.f;
-    float yConeLength = dy * 0.48f;
     Eigen::Vector3f yConeTip = p(backX, yTip, backZ);
-    Eigen::Vector3f yConeAxis(0.f, ySign, 0.f);
-    appendLine3D(out, p(backX, yBase, backZ), yConeTip - yConeAxis * yConeLength);
-    appendCone3D(out, yConeTip, yConeAxis, yConeLength,
-                 std::max(dx, dz) * 0.14f);
+    appendLine3D(out, p(backX, yBase, backZ), yConeTip);
 
     float zTip = eye.z() >= center.z() ? hi.z() + dz : lo.z() - dz;
     float zBase = eye.z() >= center.z() ? hi.z() : lo.z();
-    float zSign = eye.z() >= center.z() ? 1.f : -1.f;
-    float zConeLength = dz * 0.48f;
     Eigen::Vector3f zConeTip = p(backX, backY, zTip);
-    Eigen::Vector3f zConeAxis(0.f, 0.f, zSign);
-    appendLine3D(out, p(backX, backY, zBase), zConeTip - zConeAxis * zConeLength);
-    appendCone3D(out, zConeTip, zConeAxis, zConeLength,
-                 std::max(dx, dy) * 0.14f);
+    appendLine3D(out, p(backX, backY, zBase), zConeTip);
 
     return out;
 }
@@ -3070,6 +3024,45 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
         QFont tickFont = painter.font();
         tickFont.setPointSize(8);
         tickFont.setWeight(QFont::Normal);
+
+        auto drawArrowHead = [&](const Eigen::Vector3f& start,
+                                 const Eigen::Vector3f& tip) {
+            auto projectedStart = project3D(mvp, size, start);
+            auto projectedTip = project3D(mvp, size, tip);
+            if (!projectedStart || !projectedTip)
+                return;
+
+            QPointF direction = *projectedTip - *projectedStart;
+            double directionLength = std::hypot(direction.x(), direction.y());
+            if (directionLength <= 1.0)
+                return;
+            direction /= directionLength;
+            QPointF normal(-direction.y(), direction.x());
+
+            constexpr double arrowLength = 10.0;
+            constexpr double arrowHalfWidth = 3.5;
+            constexpr double arrowNotch = 2.5;
+            QPointF base = *projectedTip - direction * arrowLength;
+            QPointF notch = base + direction * arrowNotch;
+
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(axisColor);
+            painter.drawPolygon(QPolygonF{
+                *projectedTip,
+                base + normal * arrowHalfWidth,
+                notch,
+                base - normal * arrowHalfWidth});
+            painter.restore();
+        };
+
+        drawArrowHead(Eigen::Vector3f(frontX, backY, backZ),
+                      Eigen::Vector3f(xTip, backY, backZ));
+        drawArrowHead(Eigen::Vector3f(backX, lowerY, backZ),
+                      Eigen::Vector3f(backX, yTip, backZ));
+        drawArrowHead(Eigen::Vector3f(backX, backY, frontZ),
+                      Eigen::Vector3f(backX, backY, zTip));
 
         auto placeOutsideMesh = [&](QPointF pos, const QSizeF& textSize) {
             QPointF outward = pos - screenCenter;
