@@ -2794,16 +2794,19 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
 
             constexpr double arrowLength = 10.0;
             constexpr double arrowHalfWidth = 3.5;
+            constexpr double arrowNotch = 2.5;
             const QPointF xBase(plotArea.right() + 1.0, plotArea.bottom());
             painter.drawPolygon(QPolygonF{
                 QPointF(xBase.x() + arrowLength, xBase.y()),
                 QPointF(xBase.x(), xBase.y() - arrowHalfWidth),
+                QPointF(xBase.x() + arrowNotch, xBase.y()),
                 QPointF(xBase.x(), xBase.y() + arrowHalfWidth)});
 
             const QPointF yBase(plotArea.left(), plotArea.top() - 1.0);
             painter.drawPolygon(QPolygonF{
                 QPointF(yBase.x(), yBase.y() - arrowLength),
                 QPointF(yBase.x() - arrowHalfWidth, yBase.y()),
+                QPointF(yBase.x(), yBase.y() - arrowNotch),
                 QPointF(yBase.x() + arrowHalfWidth, yBase.y())});
             painter.restore();
         }
