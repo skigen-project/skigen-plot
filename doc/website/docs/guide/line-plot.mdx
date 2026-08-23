@@ -27,6 +27,8 @@ Accepts any Eigen expression (vectors, blocks, array expressions). Data is cast 
 | `setSeriesStyle(handle, style)` | Replace a series colour, point style, and label |
 | `setSeriesVisible(handle, visible)` | Show or hide one series |
 | `removeSeries(handle)` | Remove one series and invalidate its handle |
+| `setLegendVisible(visible)` | Show labels for visible labelled series |
+| `setLegendPosition(position)` | Select automatic or fixed-corner placement |
 | `setBackgroundColor(rgba)` | Set viewport background colour |
 
 ## Example
@@ -47,10 +49,12 @@ int main(int argc, char* argv[]) {
 
     Skigen::Plot::PlotView view;
     auto series = view.plot(
-        x, y, {.color = Eigen::Vector4f{0.2f, 0.8f, 0.4f, 1.0f}});
+        x, y, {.color = Eigen::Vector4f{0.2f, 0.8f, 0.4f, 1.0f},
+               .label = "signal"});
 
     Eigen::VectorXf updatedY = x.array().cos();
     view.updateSeriesData(series, x, updatedY);
+    view.setLegendVisible(true);
     view.resize(800, 500);
     view.show();
 

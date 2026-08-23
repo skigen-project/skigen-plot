@@ -4,6 +4,8 @@
 #include <skigen/plot/plotview.h>
 
 #include <QApplication>
+#include <QImage>
+#include <QPainter>
 
 #include <Eigen/Core>
 
@@ -23,6 +25,33 @@ int main(int argc, char* argv[])
         return 1;
     if (!view.containsSeries(line) || !view.containsSeries(points))
         return 2;
+
+    view.resize(640, 480);
+    QImage withoutLegend(view.size(), QImage::Format_ARGB32_Premultiplied);
+    withoutLegend.fill(Qt::transparent);
+    view.render(&withoutLegend);
+
+    view.setLegendVisible(true);
+    view.setLegendPosition(Skigen::Plot::LegendPosition::LowerLeft);
+    if (!view.legendVisible()
+        || view.legendPosition() != Skigen::Plot::LegendPosition::LowerLeft) {
+        return 13;
+    }
+
+    QImage withLegend(view.size(), QImage::Format_ARGB32_Premultiplied);
+    withLegend.fill(Qt::transparent);
+    view.render(&withLegend);
+    int changedPixels = 0;
+    for (int yPixel = 0; yPixel < withLegend.height(); ++yPixel) {
+        for (int xPixel = 0; xPixel < withLegend.width(); ++xPixel) {
+            if (withLegend.pixel(xPixel, yPixel)
+                != withoutLegend.pixel(xPixel, yPixel)) {
+                ++changedPixels;
+            }
+        }
+    }
+    if (changedPixels < 100)
+        return 14;
 
     Eigen::VectorXf updatedY(2);
     updatedY << 4.0f, 5.0f;

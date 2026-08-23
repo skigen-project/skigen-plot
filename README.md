@@ -31,8 +31,10 @@ int main(int argc, char* argv[]) {
 
     Skigen::Plot::PlotView view;
     auto series = view.plot(
-      x, y, {.color = Eigen::Vector4f{0.2f, 0.8f, 0.4f, 1.0f}});
+      x, y, {.color = Eigen::Vector4f{0.2f, 0.8f, 0.4f, 1.0f},
+             .label = "sin(x)"});
     view.setSeriesVisible(series, true);
+    view.setLegendVisible(true);
     view.resize(800, 500);
     view.show();
 
@@ -43,6 +45,8 @@ int main(int argc, char* argv[]) {
 `plot()` and `scatter()` return stable `SeriesHandle` values. Use
 `updateSeriesData()`, `setSeriesStyle()`, `setSeriesVisible()`, and
 `removeSeries()` to modify one series without clearing the rest of the view.
+Visible labelled series can be shown in a theme-aware legend with automatic
+or explicit corner placement.
 
 ## Plot Types
 

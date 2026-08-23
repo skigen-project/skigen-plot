@@ -41,6 +41,10 @@ public:
 
     // Appearance
     void setBackgroundColor(const Eigen::Vector4f& rgba);
+    void setLegendVisible(bool visible);
+    bool legendVisible() const;
+    void setLegendPosition(LegendPosition position);
+    LegendPosition legendPosition() const;
 
     // 3D camera
     void setCamera(const Camera3D& camera);
@@ -59,5 +63,10 @@ public:
 Line and scatter creation returns an opaque `SeriesHandle`. Handles remain
 stable when other series are removed. Mutating or removing an invalid, stale,
 or foreign handle returns `false` and leaves the view unchanged.
+
+Set a non-empty `PlotStyle::label` and call `setLegendVisible(true)` to show a
+theme-aware legend. `LegendPosition::Auto` selects the least occupied plot
+corner; `UpperLeft`, `UpperRight`, `LowerLeft`, and `LowerRight` provide fixed
+placement. Hidden and unlabelled series are omitted.
 
 See the [Line Plot](../guide/line-plot) and [Scatter Plot](../guide/scatter-plot) guides for usage examples.

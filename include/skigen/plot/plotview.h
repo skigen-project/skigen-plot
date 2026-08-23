@@ -26,6 +26,14 @@ enum class InteractionTool {
     Zoom
 };
 
+enum class LegendPosition {
+    Auto,
+    UpperLeft,
+    UpperRight,
+    LowerLeft,
+    LowerRight
+};
+
 class SKIGENPLOT_EXPORT PlotView : public QRhiWidget {
     Q_OBJECT
 
@@ -360,6 +368,12 @@ public:
     void setGridVisible(bool visible);
     void setAxesVisible(bool visible);
     void setAxisArrowsVisible(bool visible);
+
+    /// @brief Show or hide the legend for visible, labelled 2D series.
+    void setLegendVisible(bool visible);
+    auto legendVisible() const -> bool;
+    void setLegendPosition(LegendPosition position);
+    auto legendPosition() const -> LegendPosition;
 
     /// @brief Show a vertical colorbar legend for colormapped data (imshow /
     ///   contourf): a colormapped strip with min/mid/max tick labels.

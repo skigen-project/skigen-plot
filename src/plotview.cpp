@@ -223,6 +223,8 @@ struct PlotView::Impl {
     bool showGrid = true;
     bool showAxes = true;
     bool showAxisArrows = true;
+    bool showLegend = false;
+    LegendPosition legendPosition = LegendPosition::Auto;
     bool aspectEqual = false;
     QString title;
     QString caption;
@@ -643,6 +645,7 @@ auto PlotView::setSeriesStyle(SeriesHandle handle,
     seriesIt->pointSize = style.pointSize;
     seriesIt->hollow = style.hollow;
     seriesIt->label = style.label;
+    if (d->textOverlay) d->textOverlay->update();
     update();
     return true;
 }
@@ -655,6 +658,7 @@ auto PlotView::setSeriesVisible(SeriesHandle handle, bool visible) -> bool {
     seriesIt->visible = visible;
     recomputeBounds();
     d->gridDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
     update();
     return true;
 }
@@ -676,6 +680,7 @@ auto PlotView::removeSeries(SeriesHandle handle) -> bool {
     d->series2d.erase(seriesIt);
     recomputeBounds();
     d->gridDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
     update();
     return true;
 }
@@ -1742,6 +1747,26 @@ void PlotView::setAxisArrowsVisible(bool visible) {
     update();
 }
 
+void PlotView::setLegendVisible(bool visible) {
+    d->showLegend = visible;
+    if (d->textOverlay) d->textOverlay->update();
+    update();
+}
+
+auto PlotView::legendVisible() const -> bool {
+    return d->showLegend;
+}
+
+void PlotView::setLegendPosition(LegendPosition position) {
+    d->legendPosition = position;
+    if (d->textOverlay) d->textOverlay->update();
+    update();
+}
+
+auto PlotView::legendPosition() const -> LegendPosition {
+    return d->legendPosition;
+}
+
 void PlotView::setColorbarVisible(bool visible) {
     d->showColorbar = visible;
     if (d->textOverlay) d->textOverlay->update();
@@ -2221,6 +2246,118 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
             cbLabel(0.0, d->colorbarVmin);
             cbLabel(0.5, 0.5f * (d->colorbarVmin + d->colorbarVmax));
             cbLabel(1.0, d->colorbarVmax);
+        }
+    }
+
+    if (d->showLegend && d->has2D() && !d->has3D()) {
+        std::vector<const Series2D*> entries;
+        for (const auto& series : d->series2d) {
+            if (series.visible && !series.label.isEmpty())
+                entries.push_back(&series);
+        }
+
+        if (!entries.empty()) {
+            const QRectF plotArea = plotAreaFor(
+                size,
+                !d->title.isEmpty(),
+                !d->caption.isEmpty(),
+                !d->xAxisLabel.isEmpty(),
+                !d->yAxisLabel.isEmpty(),
+                d->showColorbar && d->hasColormappedData);
+
+            QFont legendFont = painter.font();
+            legendFont.setPointSize(9);
+            legendFont.setWeight(QFont::Normal);
+            painter.setFont(legendFont);
+            const QFontMetrics metrics(legendFont);
+
+            constexpr double padding = 8.0;
+            constexpr double sampleWidth = 24.0;
+            constexpr double gap = 7.0;
+            const double rowHeight = std::max(18.0, metrics.height() + 4.0);
+            double labelWidth = 0.0;
+            for (const auto* entry : entries)
+                labelWidth = std::max(labelWidth,
+                                      static_cast<double>(metrics.horizontalAdvance(entry->label)));
+            const QSizeF legendSize(
+                padding * 2.0 + sampleWidth + gap + labelWidth,
+                padding * 2.0 + rowHeight * static_cast<double>(entries.size()));
+
+            LegendPosition position = d->legendPosition;
+            if (position == LegendPosition::Auto) {
+                std::array<std::size_t, 4> occupancy{};
+                const Eigen::Vector2f center = d->viewBounds.center();
+                for (const auto& series : d->series2d) {
+                    if (!series.visible)
+                        continue;
+                    for (int i = 0; i < series.vertexCount; ++i) {
+                        const float x = series.vertices[static_cast<std::size_t>(i) * 2];
+                        const float y = series.vertices[static_cast<std::size_t>(i) * 2 + 1];
+                        const bool right = x >= center.x();
+                        const bool bottom = y < center.y();
+                        const std::size_t quadrant = bottom
+                            ? (right ? 3u : 2u)
+                            : (right ? 1u : 0u);
+                        ++occupancy[quadrant];
+                    }
+                }
+                const auto leastOccupied = static_cast<std::size_t>(
+                    std::distance(occupancy.begin(),
+                                  std::min_element(occupancy.begin(), occupancy.end())));
+                constexpr std::array positions{
+                    LegendPosition::UpperLeft,
+                    LegendPosition::UpperRight,
+                    LegendPosition::LowerLeft,
+                    LegendPosition::LowerRight
+                };
+                position = positions[leastOccupied];
+            }
+
+            constexpr double inset = 10.0;
+            const bool right = position == LegendPosition::UpperRight
+                || position == LegendPosition::LowerRight;
+            const bool bottom = position == LegendPosition::LowerLeft
+                || position == LegendPosition::LowerRight;
+            const QPointF topLeft(
+                right ? plotArea.right() - legendSize.width() - inset
+                      : plotArea.left() + inset,
+                bottom ? plotArea.bottom() - legendSize.height() - inset
+                       : plotArea.top() + inset);
+            const QRectF legendRect(topLeft, legendSize);
+
+            QColor background = colorFromVec(d->theme.background);
+            background.setAlphaF(0.92);
+            painter.setPen(QPen(mutedColor, 1.0));
+            painter.setBrush(background);
+            painter.drawRoundedRect(legendRect, 4.0, 4.0);
+
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                const auto& entry = *entries[i];
+                const double rowCenter = legendRect.top() + padding
+                    + rowHeight * (static_cast<double>(i) + 0.5);
+                const double sampleLeft = legendRect.left() + padding;
+                painter.setPen(QPen(colorFromVec(entry.color), 2.0));
+                painter.setBrush(colorFromVec(entry.color));
+                if (entry.kind == SeriesKind::Scatter) {
+                    painter.drawEllipse(
+                        QPointF(sampleLeft + sampleWidth * 0.5, rowCenter),
+                        3.5, 3.5);
+                } else if (entry.kind == SeriesKind::Fill) {
+                    painter.drawRect(QRectF(sampleLeft, rowCenter - 3.0,
+                                            sampleWidth, 6.0));
+                } else {
+                    painter.drawLine(QPointF(sampleLeft, rowCenter),
+                                     QPointF(sampleLeft + sampleWidth, rowCenter));
+                }
+                painter.setPen(textColor);
+                painter.setBrush(Qt::NoBrush);
+                painter.drawText(
+                    QRectF(sampleLeft + sampleWidth + gap,
+                           rowCenter - rowHeight * 0.5,
+                           labelWidth, rowHeight),
+                    Qt::AlignLeft | Qt::AlignVCenter,
+                    entry.label);
+            }
         }
     }
 
