@@ -147,6 +147,23 @@ auto transformLineSource(std::span<const float> source,
     return transformed;
 }
 
+auto markerQuadVertices(std::span<const float> points) -> std::vector<float> {
+    static constexpr std::array<std::array<float, 2>, 6> corners{{
+        {{-0.5f, -0.5f}}, {{0.5f, -0.5f}}, {{0.5f, 0.5f}},
+        {{-0.5f, -0.5f}}, {{0.5f, 0.5f}}, {{-0.5f, 0.5f}}
+    }};
+    std::vector<float> vertices;
+    vertices.reserve(points.size() * 12);
+    for (std::size_t i = 0; i + 1 < points.size(); i += 2) {
+        for (const auto& corner : corners) {
+            vertices.insert(vertices.end(), {
+                points[i], points[i + 1], corner[0], corner[1]
+            });
+        }
+    }
+    return vertices;
+}
+
 // ── Per-series GPU state ───────────────────────────────────────────
 
 struct Series2D {
@@ -686,8 +703,8 @@ auto PlotView::addSeriesImpl(int kindInt,
     Series2D series;
     series.id = groupHandle ? groupHandle.m_id : nextSeriesId();
     series.kind = kind;
-    auto& dataVertices = kind == SeriesKind::Line
-        ? series.sourceVertices : series.vertices;
+    auto& dataVertices = kind == SeriesKind::Fill
+        ? series.vertices : series.sourceVertices;
     dataVertices.reserve(count * 2);
     for (std::size_t i = 0; i < count; ++i) {
         if (!std::isfinite(x[i]) || !std::isfinite(y[i])) {
@@ -700,10 +717,13 @@ auto PlotView::addSeriesImpl(int kindInt,
         dataVertices.push_back(x[i]);
         dataVertices.push_back(y[i]);
     }
-    series.sourceVertexCount = kind == SeriesKind::Line
-        ? static_cast<int>(finiteSampleIndices(count, x, y).size()) : 0;
+    series.sourceVertexCount = kind == SeriesKind::Fill
+        ? 0 : static_cast<int>(finiteSampleIndices(count, x, y).size());
+    if (kind == SeriesKind::Scatter)
+        series.vertices = markerQuadVertices(series.sourceVertices);
     series.vertexCount = kind == SeriesKind::Line
-        ? 0 : static_cast<int>(series.vertices.size() / 2);
+        ? 0 : static_cast<int>(series.vertices.size()
+                               / (kind == SeriesKind::Scatter ? 4 : 2));
 
     int colorIdx = d->nextColorIndex;
     d->nextColorIndex++;
@@ -758,8 +778,8 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
         const auto indices = finiteSampleIndices(count, x, y);
         seriesIt->vertices.clear();
         seriesIt->vertices.reserve(indices.size() * 12);
-        scatterIt->vertices.clear();
-        scatterIt->vertices.reserve(indices.size() * 2);
+        scatterIt->sourceVertices.clear();
+        scatterIt->sourceVertices.reserve(indices.size() * 2);
         float stemHalf = 1e-6f;
         if (!indices.empty()) {
             float xMin = x[indices.front()];
@@ -777,11 +797,13 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
                 left, 0.0f, right, 0.0f, right, y[i],
                 left, 0.0f, right, y[i], left, y[i]
             });
-            scatterIt->vertices.push_back(x[i]);
-            scatterIt->vertices.push_back(y[i]);
+            scatterIt->sourceVertices.push_back(x[i]);
+            scatterIt->sourceVertices.push_back(y[i]);
         }
         seriesIt->vertexCount = static_cast<int>(indices.size() * 6);
-        scatterIt->vertexCount = static_cast<int>(indices.size());
+        scatterIt->sourceVertexCount = static_cast<int>(indices.size());
+        scatterIt->vertices = markerQuadVertices(scatterIt->sourceVertices);
+        scatterIt->vertexCount = static_cast<int>(scatterIt->vertices.size() / 4);
         seriesIt->dirty = true;
         scatterIt->dirty = true;
         recomputeBounds();
@@ -792,8 +814,7 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
     if (seriesIt->kind == SeriesKind::Fill)
         return false;
 
-    auto& dataVertices = seriesIt->kind == SeriesKind::Line
-        ? seriesIt->sourceVertices : seriesIt->vertices;
+    auto& dataVertices = seriesIt->sourceVertices;
     dataVertices.clear();
     dataVertices.reserve(count * 2);
     for (std::size_t i = 0; i < count; ++i) {
@@ -807,10 +828,12 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
         dataVertices.push_back(x[i]);
         dataVertices.push_back(y[i]);
     }
-    seriesIt->sourceVertexCount = seriesIt->kind == SeriesKind::Line
-        ? static_cast<int>(finiteSampleIndices(count, x, y).size()) : 0;
+    seriesIt->sourceVertexCount = static_cast<int>(
+        finiteSampleIndices(count, x, y).size());
+    if (seriesIt->kind == SeriesKind::Scatter)
+        seriesIt->vertices = markerQuadVertices(seriesIt->sourceVertices);
     seriesIt->vertexCount = seriesIt->kind == SeriesKind::Line
-        ? 0 : static_cast<int>(seriesIt->vertices.size() / 2);
+        ? 0 : static_cast<int>(seriesIt->vertices.size() / 4);
     seriesIt->strokeDirty = true;
     seriesIt->dirty = true;
     recomputeBounds();
@@ -1921,20 +1944,30 @@ auto PlotView::hexbinImpl(std::span<const float> x, std::span<const float> y,
 void PlotView::setPointCloudData(std::span<const float> data,
                                   int vertexCount,
                                   const PlotStyle& style) {
-    d->vertices3d.resize(static_cast<std::size_t>(vertexCount) * 3);
+    static constexpr std::array<std::array<float, 2>, 6> corners{{
+        {{-0.5f, -0.5f}}, {{0.5f, -0.5f}}, {{0.5f, 0.5f}},
+        {{-0.5f, -0.5f}}, {{0.5f, 0.5f}}, {{-0.5f, 0.5f}}
+    }};
+    d->vertices3d.clear();
+    d->vertices3d.reserve(static_cast<std::size_t>(vertexCount) * 30);
     if (!d->has3D())
         d->interactionTool = InteractionTool::Rotate;
     for (int i = 0; i < vertexCount; ++i) {
-        d->vertices3d[static_cast<std::size_t>(i) * 3]     = data[static_cast<std::size_t>(i)];
-        d->vertices3d[static_cast<std::size_t>(i) * 3 + 1] = data[static_cast<std::size_t>(vertexCount + i)];
-        d->vertices3d[static_cast<std::size_t>(i) * 3 + 2] = data[static_cast<std::size_t>(2 * vertexCount + i)];
+        const float x = data[static_cast<std::size_t>(i)];
+        const float y = data[static_cast<std::size_t>(vertexCount + i)];
+        const float z = data[static_cast<std::size_t>(2 * vertexCount + i)];
+        for (const auto& corner : corners) {
+            d->vertices3d.insert(d->vertices3d.end(), {
+                x, y, z, corner[0], corner[1]
+            });
+        }
     }
-    d->vertex3dCount = vertexCount;
+    d->vertex3dCount = vertexCount * 6;
 
     d->bounds3d = BoundingBox3D();
     for (int i = 0; i < vertexCount; ++i) {
         for (int a = 0; a < 3; ++a) {
-            float v = d->vertices3d[static_cast<std::size_t>(i) * 3 + static_cast<std::size_t>(a)];
+            const float v = data[static_cast<std::size_t>(a * vertexCount + i)];
             if (v < d->bounds3d.min[a]) d->bounds3d.min[a] = v;
             if (v > d->bounds3d.max[a]) d->bounds3d.max[a] = v;
         }
@@ -2426,9 +2459,9 @@ void PlotView::recomputeBounds() {
             d->bounds2d = d->bounds2d.merge(bounds);
     };
     for (const auto& s : d->series2d) {
-        const auto& boundsVertices = s.kind == SeriesKind::Line
+        const auto& boundsVertices = s.kind != SeriesKind::Fill
             ? s.sourceVertices : s.vertices;
-        const int boundsVertexCount = s.kind == SeriesKind::Line
+        const int boundsVertexCount = s.kind != SeriesKind::Fill
             ? s.sourceVertexCount : s.vertexCount;
         if (!s.visible || boundsVertexCount == 0) continue;
         mergeVertices(boundsVertices, 2);
@@ -2687,6 +2720,14 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
     painter.save();
     painter.setPen(textColor);
 
+    const double titleSafeBottom = !d->title.isEmpty()
+        ? (!d->caption.isEmpty() ? 58.0 : 38.0)
+        : (!d->caption.isEmpty() ? 38.0 : 0.0);
+    if (d->has3D() && titleSafeBottom > 0.0) {
+        painter.fillRect(QRectF(0.0, 0.0, size.width(), titleSafeBottom),
+                         colorFromVec(d->theme.background));
+    }
+
     if (!d->title.isEmpty()) {
         QFont titleFont = painter.font();
         titleFont.setPointSize(13);
@@ -2854,7 +2895,7 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                 for (const auto& series : d->series2d) {
                     if (!series.visible)
                         continue;
-                    const auto& occupancyVertices = series.kind == SeriesKind::Line
+                    const auto& occupancyVertices = series.kind != SeriesKind::Fill
                         ? series.sourceVertices : series.vertices;
                     for (std::size_t i = 0; i + 1 < occupancyVertices.size(); i += 2) {
                         const float x = occupancyVertices[i];
@@ -3017,7 +3058,7 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                                 textSize.width() * 0.5 + 8.0,
                                 static_cast<double>(size.width()) - textSize.width() * 0.5 - 8.0));
             pos.setY(std::clamp(pos.y(),
-                                textSize.height() * 0.5 + 8.0,
+                                titleSafeBottom + textSize.height() * 0.5 + 8.0,
                                 static_cast<double>(size.height()) - textSize.height() * 0.5 - 8.0));
             return pos;
         };
@@ -3319,6 +3360,15 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
         QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float2, 0)
     });
 
+    // ── Portable marker layout (vec2 centre + vec2 local corner) ───
+    QRhiVertexInputLayout layoutMarker;
+    layoutMarker.setBindings({QRhiVertexInputBinding(4 * sizeof(float))});
+    layoutMarker.setAttributes({
+        QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float2, 0),
+        QRhiVertexInputAttribute(0, 1, QRhiVertexInputAttribute::Float2,
+                                 2 * sizeof(float))
+    });
+
     // ── Heatmap layout (vec2 pos + vec4 colour, stride 24) ─────────
     QRhiVertexInputLayout layoutHeatmap;
     layoutHeatmap.setBindings({QRhiVertexInputBinding(6 * sizeof(float))});
@@ -3328,11 +3378,20 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
                                  2 * sizeof(float))
     });
 
-    // ── 3D point layout (vec3, stride 12) ──────────────────────────
-    QRhiVertexInputLayout layout3dPoint;
-    layout3dPoint.setBindings({QRhiVertexInputBinding(3 * sizeof(float))});
-    layout3dPoint.setAttributes({
+    // ── 3D position layout (vec3, stride 12) ───────────────────────
+    QRhiVertexInputLayout layout3dPosition;
+    layout3dPosition.setBindings({QRhiVertexInputBinding(3 * sizeof(float))});
+    layout3dPosition.setAttributes({
         QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float3, 0)
+    });
+
+    // ── Portable 3D point layout (vec3 centre + vec2 corner) ───────
+    QRhiVertexInputLayout layout3dPoint;
+    layout3dPoint.setBindings({QRhiVertexInputBinding(5 * sizeof(float))});
+    layout3dPoint.setAttributes({
+        QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float3, 0),
+        QRhiVertexInputAttribute(0, 1, QRhiVertexInputAttribute::Float2,
+                                 3 * sizeof(float))
     });
 
     // ── 3D mesh layout (vec3 pos + vec3 normal, stride 24) ─────────
@@ -3377,14 +3436,14 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->gridPipeline->setTargetBlends({alphaBlend()});
     d->gridPipeline->create();
 
-    // ── Point pipeline (Points, no depth) ──────────────────────────
+    // ── Point pipeline (portable screen-space quads, no depth) ─────
     d->pointPipeline.reset(r->newGraphicsPipeline());
-    d->pointPipeline->setTopology(QRhiGraphicsPipeline::Points);
+    d->pointPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
     d->pointPipeline->setShaderStages({
         {QRhiShaderStage::Vertex, *pointVs},
         {QRhiShaderStage::Fragment, *pointFs}
     });
-    d->pointPipeline->setVertexInputLayout(layout2d);
+    d->pointPipeline->setVertexInputLayout(layoutMarker);
     d->pointPipeline->setShaderResourceBindings(d->gridSrb.get());
     d->pointPipeline->setRenderPassDescriptor(rpDesc);
     d->pointPipeline->setSampleCount(sc);
@@ -3423,7 +3482,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
 
     // ── 3D Point pipeline (Points, depth enabled) ──────────────────
     d->point3dPipeline.reset(r->newGraphicsPipeline());
-    d->point3dPipeline->setTopology(QRhiGraphicsPipeline::Points);
+    d->point3dPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
     d->point3dPipeline->setShaderStages({
         {QRhiShaderStage::Vertex, *pt3dVs},
         {QRhiShaderStage::Fragment, *pt3dFs}
@@ -3459,7 +3518,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
         {QRhiShaderStage::Vertex, *edgeVs},
         {QRhiShaderStage::Fragment, *lineFs}
     });
-    d->meshEdgePipeline->setVertexInputLayout(layout3dPoint);
+    d->meshEdgePipeline->setVertexInputLayout(layout3dPosition);
     d->meshEdgePipeline->setShaderResourceBindings(d->meshEdgeSrb.get());
     d->meshEdgePipeline->setRenderPassDescriptor(rpDesc);
     d->meshEdgePipeline->setSampleCount(sc);
@@ -3477,7 +3536,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
         {QRhiShaderStage::Vertex, *edgeVs},
         {QRhiShaderStage::Fragment, *lineFs}
     });
-    d->guide3dPipeline->setVertexInputLayout(layout3dPoint);
+    d->guide3dPipeline->setVertexInputLayout(layout3dPosition);
     d->guide3dPipeline->setShaderResourceBindings(d->guide3dSrb.get());
     d->guide3dPipeline->setRenderPassDescriptor(rpDesc);
     d->guide3dPipeline->setSampleCount(sc);
@@ -3696,7 +3755,9 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         d->yScale == AxisScale::Log10 ? 1.0f : 0.0f,
         1.0f, 0.0f);
     const Eigen::Vector4f dataAxisParams(
-        transformedAxisParams.x(), transformedAxisParams.y(), 0.0f, 0.0f);
+        transformedAxisParams.x(), transformedAxisParams.y(),
+        static_cast<float>(plotArea.width()),
+        static_cast<float>(plotArea.height()));
     if (is2D && d->showGrid) {
         u->updateDynamicBuffer(d->gridUniformBuffer.get(), 0, 64, mvp.data());
         u->updateDynamicBuffer(d->gridUniformBuffer.get(), 64, 16,
@@ -3749,7 +3810,9 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
 
     // ── Upload 3D uniforms ─────────────────────────────────────────
     if (d->mode3d == RenderMode3D::PointCloud) {
-        Eigen::Vector4f params(d->data3dPointSize, 0.f, 0.f, 0.f);
+        Eigen::Vector4f params(d->data3dPointSize,
+                       static_cast<float>(sz.width()),
+                       static_cast<float>(sz.height()), 0.f);
         u->updateDynamicBuffer(d->point3dUniformBuffer.get(), 0, 64, mvp.data());
         u->updateDynamicBuffer(d->point3dUniformBuffer.get(), 64, 16,
                                d->data3dColor.data());

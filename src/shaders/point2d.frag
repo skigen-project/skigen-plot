@@ -1,6 +1,7 @@
 #version 440
 
 layout(location = 0) out vec4 fragColor;
+layout(location = 0) in vec2 markerCoord;
 
 layout(std140, binding = 0) uniform buf {
     mat4 mvp;
@@ -32,7 +33,7 @@ float markerDistance(vec2 point, float radius, float shape)
 
 void main()
 {
-    vec2 coord = gl_PointCoord - vec2(0.5);
+    vec2 coord = markerCoord;
     float distance = markerDistance(coord, 0.5, params.z);
     float outerAlpha = 1.0 - smoothstep(-0.04, 0.0, distance);
     if (outerAlpha < 0.01)

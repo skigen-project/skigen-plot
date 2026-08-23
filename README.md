@@ -78,6 +78,8 @@ Use `setXScale(AxisScale::Log10)` and `setYScale(AxisScale::Log10)` independentl
 for base-10 logarithmic axes. Limits remain expressed in data units; logarithmic
 limits must be positive, and non-positive samples are omitted on logarithmic axes.
 Scatter series support circle, square, triangle, plus, and cross markers.
+Markers use portable screen-space triangle geometry, so requested point sizes
+remain visible and consistent across Direct3D, Vulkan, and Metal.
 Line series support solid, dashed, dotted, and dash-dot strokes. Line width and
 dash spacing are measured in screen pixels and remain stable while zooming.
 Non-finite line samples create visible gaps instead of connecting adjacent runs.

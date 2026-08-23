@@ -30,6 +30,10 @@ All notable changes to SkigenPlot will be documented in this file.
   mixed-scale rendering, transformed pan/zoom, and positive-domain validation.
 - Circle, square, triangle, plus, and cross scatter markers, including hollow
   rendering for closed shapes.
+- Portable screen-space triangle markers for 2D scatter and depth-tested 3D
+  point clouds, preserving requested pixel sizes on Direct3D, Vulkan, and Metal.
+- Refined gallery composition with high-contrast scatter clusters, legends,
+  clearer 3D framing, and a shaded damped-wave surface mesh.
 - Deterministic finite-data filtering for line, scatter, series updates, and
   histograms; creation fails predictably when no usable values remain.
 - Public `computeHistogram()` data-layer results with reference tests for

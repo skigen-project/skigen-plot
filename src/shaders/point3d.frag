@@ -1,6 +1,7 @@
 #version 440
 
 layout(location = 0) out vec4 fragColor;
+layout(location = 0) in vec2 markerCoord;
 
 layout(std140, binding = 0) uniform buf {
     mat4 mvp;
@@ -10,7 +11,7 @@ layout(std140, binding = 0) uniform buf {
 
 void main()
 {
-    vec2 coord = gl_PointCoord - vec2(0.5);
+    vec2 coord = markerCoord;
     float radius = length(coord);
     if (radius > 0.5)
         discard;

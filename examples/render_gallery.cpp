@@ -86,24 +86,27 @@ auto scatterStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
             int n = 150;
             Eigen::VectorXf x1(n), y1(n), x2(n), y2(n);
             for (int i = 0; i < n; ++i) {
-                x1(i) = dist(rng) - 1.5f;
-                y1(i) = dist(rng);
-                x2(i) = dist(rng) + 1.5f;
-                y2(i) = dist(rng);
+                x1(i) = 0.82f * dist(rng) - 1.45f;
+                y1(i) = 0.72f * dist(rng) + 0.25f;
+                x2(i) = 0.88f * dist(rng) + 1.45f;
+                y2(i) = 0.76f * dist(rng) - 0.20f;
             }
 
             view.clear();
             view.setTheme(theme);
             view.setTitle(QStringLiteral("Gaussian Clusters"));
-            view.setCaption(QStringLiteral("Soft-edged points with translucent grid and axis labels"));
+            view.setCaption(QStringLiteral("Two embedding populations, 300 observations"));
             view.setAxisLabels(QStringLiteral("feature 1"), QStringLiteral("feature 2"));
-            view.scatter(x1, y1, {.pointSize = 7.0f,
+            view.scatter(x1, y1, {.pointSize = 9.0f,
+                                  .opacity = 0.82f,
                                   .label = "Cluster A",
-                                  .marker = Skigen::Plot::MarkerShape::Square});
-            view.scatter(x2, y2, {.pointSize = 8.0f,
-                                  .hollow = true,
+                                  .marker = Skigen::Plot::MarkerShape::Circle});
+            view.scatter(x2, y2, {.pointSize = 10.0f,
+                                  .opacity = 0.76f,
                                   .label = "Cluster B",
                                   .marker = Skigen::Plot::MarkerShape::Triangle});
+            view.setLegendVisible(true);
+            view.setLegendPosition(Skigen::Plot::LegendPosition::UpperRight);
         }
     };
 }
@@ -400,15 +403,15 @@ auto pointCloudStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
             }
 
             Skigen::Plot::Camera3D camera;
-            camera.lookAt({4.8f, 4.0f, 5.0f}, {0.f, -0.15f, 0.f});
-            camera.setPerspective(32.f, 4.f / 3.f, 0.1f, 50.f);
+            camera.lookAt({6.4f, 5.2f, 7.0f}, {0.f, -0.15f, 0.f});
+            camera.setPerspective(38.f, 4.f / 3.f, 0.1f, 50.f);
 
             view.clear();
             view.setTheme(theme);
             view.setTitle(QStringLiteral("3D Point Cloud"));
             view.setCaption(QStringLiteral("Depth-tested point rendering"));
             view.setAxisLabels(QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("z"));
-            view.pointCloud(vertices);
+            view.pointCloud(vertices, {.pointSize = 7.5f});
             view.setCamera(camera);
         }
     };
@@ -418,34 +421,45 @@ auto meshStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
     return {
         std::move(filename),
         [theme](Skigen::Plot::PlotView& view) {
-            Eigen::MatrixXf vertices(8, 3);
-            vertices << -1.f, -1.f, -1.f,
-                         1.f, -1.f, -1.f,
-                         1.f,  1.f, -1.f,
-                        -1.f,  1.f, -1.f,
-                        -1.f, -1.f,  1.f,
-                         1.f, -1.f,  1.f,
-                         1.f,  1.f,  1.f,
-                        -1.f,  1.f,  1.f;
+            constexpr int side = 41;
+            Eigen::MatrixXf vertices(side * side, 3);
+            for (int row = 0; row < side; ++row) {
+                for (int col = 0; col < side; ++col) {
+                    const float x = -3.2f + 6.4f * col / (side - 1);
+                    const float y = -3.2f + 6.4f * row / (side - 1);
+                    const float radius = std::sqrt(x * x + y * y);
+                    const float z = 1.35f * std::exp(-0.12f * radius * radius)
+                        * std::cos(2.35f * radius);
+                    const int index = row * side + col;
+                    vertices.row(index) << x, z, y;
+                }
+            }
 
-            Eigen::MatrixXi indices(12, 3);
-            indices << 0, 1, 2,  0, 2, 3,
-                       4, 6, 5,  4, 7, 6,
-                       0, 4, 5,  0, 5, 1,
-                       2, 6, 7,  2, 7, 3,
-                       0, 3, 7,  0, 7, 4,
-                       1, 5, 6,  1, 6, 2;
+            Eigen::MatrixXi indices((side - 1) * (side - 1) * 2, 3);
+            int triangle = 0;
+            for (int row = 0; row < side - 1; ++row) {
+                for (int col = 0; col < side - 1; ++col) {
+                    const int topLeft = row * side + col;
+                    const int topRight = topLeft + 1;
+                    const int bottomLeft = topLeft + side;
+                    const int bottomRight = bottomLeft + 1;
+                    indices.row(triangle++) << topLeft, bottomLeft, topRight;
+                    indices.row(triangle++) << topRight, bottomLeft, bottomRight;
+                }
+            }
 
             Skigen::Plot::Camera3D camera;
-            camera.lookAt({3.7f, 2.7f, 4.6f}, {0.f, 0.f, 0.f});
+            camera.lookAt({6.8f, 5.1f, 7.4f}, {0.f, -0.15f, 0.f});
             camera.setPerspective(38.f, 4.f / 3.f, 0.1f, 50.f);
 
             view.clear();
             view.setTheme(theme);
-            view.setTitle(QStringLiteral("Cube Mesh"));
-            view.setCaption(QStringLiteral("Flat-shaded scientific mesh with sharp-edge overlay"));
-            view.setAxisLabels(QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("z"));
-            view.mesh(vertices, indices, {.color = Eigen::Vector4f(0.04f, 0.48f, 0.70f, 1.0f)});
+            view.setTitle(QStringLiteral("Damped Wave Surface"));
+            view.setCaption(QStringLiteral("Radial response sampled on a 41 x 41 triangular mesh"));
+            view.setAxisLabels(QStringLiteral("x"), QStringLiteral("response"),
+                               QStringLiteral("y"));
+            view.mesh(vertices, indices,
+                      {.color = Eigen::Vector4f(0.04f, 0.56f, 0.68f, 1.0f)});
             view.setCamera(camera);
         }
     };
