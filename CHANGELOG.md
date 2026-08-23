@@ -33,6 +33,8 @@ All notable changes to SkigenPlot will be documented in this file.
 - Backend-aware 2D viewport placement keeps GPU-rendered fields exactly aligned
   with painter-rendered axes and colorbars.
 - Scatter legends reproduce each series' marker shape, size, and hollow style.
+- Color-preserving 3D mesh lighting reduces saturation and highlight clipping
+  so surface curvature remains inspectable in light and dark themes.
 - Independent linear and base-10 logarithmic x/y scales with decade ticks,
   mixed-scale rendering, transformed pan/zoom, and positive-domain validation.
 - Circle, square, triangle, plus, and cross scatter markers, including hollow

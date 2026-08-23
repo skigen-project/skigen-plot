@@ -3861,7 +3861,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         Eigen::Vector3f up = right.cross(forward).normalized();
         Eigen::Vector3f keyLight = (-forward + 0.50f * up + 0.24f * right).normalized();
         Eigen::Vector4f lightDir(keyLight.x(), keyLight.y(), keyLight.z(), 0.f);
-        Eigen::Vector4f lightParams(0.30f, 0.78f, 0.46f, 0.52f);
+        Eigen::Vector4f lightParams(0.36f, 0.42f, 0.10f, 0.0f);
         bool darkBg = bgColor.x() < 0.5f;
         Eigen::Vector4f edgeColor = darkBg
             ? Eigen::Vector4f(0.82f, 0.96f, 1.00f, 0.48f)

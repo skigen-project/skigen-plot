@@ -29,29 +29,17 @@ void main()
     float top = max(dot(N, topL), 0.0);
 
     vec3 H = normalize(L + V);
-    vec3 H2 = normalize(topL + V);
-    float broadSpec = pow(max(dot(N, H), 0.0), 14.0);
-    float crispSpec = pow(max(dot(N, H2), 0.0), 70.0);
-    float fresnel = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.4);
+    float specular = pow(max(dot(N, H), 0.0), 28.0);
+    float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    vec3 albedo = mix(vec3(luminance), color.rgb, 0.68);
 
-    float topFacing = max(N.y, 0.0);
-    float rightFacing = max(N.x, 0.0);
-    float frontFacing = max(N.z, 0.0);
-    float cameraGloss = pow(max(dot(N, V), 0.0), 3.2);
-    vec3 brandBlue = vec3(0.05, 0.50, 0.74);
-    vec3 deepCyan = vec3(0.02, 0.26, 0.31);
-    vec3 albedo = mix(color.rgb, brandBlue, 0.38);
-    albedo = mix(albedo, vec3(0.12, 0.78, 0.94), 0.22 * topFacing);
-    albedo += vec3(0.02, 0.10, 0.16) * rightFacing;
-    albedo += vec3(0.06, 0.16, 0.18) * topFacing;
-    albedo -= vec3(0.02, 0.03, 0.03) * frontFacing;
-
-    float diffuse = lightParams.x + lightParams.y * key + 0.22 * fill + 0.22 * top + 0.30 * topFacing;
+    float diffuse = lightParams.x
+        + lightParams.y * key
+        + 0.14 * fill
+        + 0.08 * top;
+    diffuse = clamp(diffuse, 0.34, 0.92);
     vec3 litColor = albedo * diffuse;
-    litColor += (0.30 * broadSpec + lightParams.z * crispSpec + 0.16 * cameraGloss)
-        * vec3(0.78, 0.96, 1.00);
-    litColor += lightParams.w * fresnel * vec3(0.04, 0.44, 0.62);
-    litColor += deepCyan * 0.08 * (1.0 - key);
+    litColor += lightParams.z * specular * vec3(0.92);
 
     fragColor = vec4(clamp(litColor, 0.0, 1.0), color.a);
 }
