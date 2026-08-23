@@ -2584,11 +2584,6 @@ void PlotView::computeGridVertices() {
     }
     d->gridVertexCount = static_cast<int>(d->gridVertices.size()) / 2;
 
-    d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
-    d->axisVertices.push_back(xhi); d->axisVertices.push_back(ylo);
-    d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
-    d->axisVertices.push_back(xlo); d->axisVertices.push_back(yhi);
-
     if (d->showAxisArrows) {
         auto appendLine2D = [&](float ax, float ay, float bx, float by) {
             d->axisVertices.push_back(ax); d->axisVertices.push_back(ay);
@@ -2606,9 +2601,12 @@ void PlotView::computeGridVertices() {
         const float yRange = std::max(1e-12f, std::abs(yhi - ylo));
         const float dataPerPxX = xRange / d->viewportW;
         const float dataPerPxY = yRange / d->viewportH;
+        const float xDirection = xhi >= xlo ? 1.0f : -1.0f;
+        const float yDirection = yhi >= ylo ? 1.0f : -1.0f;
 
         constexpr float kArrowLenPx = 13.0f;       // tip-to-base length
         constexpr float kArrowHalfWidthPx = 5.0f;  // half of the base width
+        constexpr float kTipInsetPx = 1.5f;
 
         // Solid (filled) arrowheads: the grid/axis pipeline draws line
         // segments only, so fill each triangular head with a fan of
@@ -2625,19 +2623,33 @@ void PlotView::computeGridVertices() {
             }
         };
 
-        // X-axis arrow (points +x): length along x, half-width along y.
+        // Keep edge-aligned arrowheads inside the viewport rather than
+        // centering half their width outside the scissor rectangle.
         const float xHeadLen = kArrowLenPx * dataPerPxX;
         const float xHeadHalf = kArrowHalfWidthPx * dataPerPxY;
-        fillArrow2D(xhi, ylo,
-                    xhi - xHeadLen, ylo - xHeadHalf,
-                    xhi - xHeadLen, ylo + xHeadHalf);
+        const float xTip = xhi - xDirection * kTipInsetPx * dataPerPxX;
+        fillArrow2D(xTip, ylo,
+                    xTip - xDirection * xHeadLen, ylo,
+                    xTip - xDirection * xHeadLen,
+                    ylo + yDirection * 2.0f * xHeadHalf);
 
-        // Y-axis arrow (points +y): length along y, half-width along x.
         const float yHeadLen = kArrowLenPx * dataPerPxY;
         const float yHeadHalf = kArrowHalfWidthPx * dataPerPxX;
-        fillArrow2D(xlo, yhi,
-                    xlo - yHeadHalf, yhi - yHeadLen,
-                    xlo + yHeadHalf, yhi - yHeadLen);
+        const float yTip = yhi - yDirection * kTipInsetPx * dataPerPxY;
+        fillArrow2D(xlo, yTip,
+                    xlo, yTip - yDirection * yHeadLen,
+                    xlo + xDirection * 2.0f * yHeadHalf,
+                    yTip - yDirection * yHeadLen);
+
+        d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
+        d->axisVertices.push_back(xTip); d->axisVertices.push_back(ylo);
+        d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
+        d->axisVertices.push_back(xlo); d->axisVertices.push_back(yTip);
+    } else {
+        d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
+        d->axisVertices.push_back(xhi); d->axisVertices.push_back(ylo);
+        d->axisVertices.push_back(xlo); d->axisVertices.push_back(ylo);
+        d->axisVertices.push_back(xlo); d->axisVertices.push_back(yhi);
     }
 
     float txLen = (yhi - ylo) * 0.010f;

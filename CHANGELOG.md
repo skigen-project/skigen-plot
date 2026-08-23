@@ -28,6 +28,8 @@ All notable changes to SkigenPlot will be documented in this file.
   intentional axis inversion through reversed endpoints.
 - Data-relative autoscaling with restrained padding for ordinary series and
   exact sticky edges for fields, keeping axes aligned with rendered content.
+- Viewport-safe 2D axis arrowheads that remain fully visible for normal and
+  reversed axes.
 - Independent linear and base-10 logarithmic x/y scales with decade ticks,
   mixed-scale rendering, transformed pan/zoom, and positive-domain validation.
 - Circle, square, triangle, plus, and cross scatter markers, including hollow
