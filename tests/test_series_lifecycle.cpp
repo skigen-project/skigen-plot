@@ -229,7 +229,9 @@ int main(int argc, char* argv[])
     hexbinView.hexbin(invalidValues, invalidValues);
     if (hexbinView.is2DView())
         return 41;
-    hexbinView.hexbin(x, invalidValues);
+    Eigen::VectorXf mixedHexbinY = invalidValues;
+    mixedHexbinY[0] = 1.0f;
+    hexbinView.hexbin(x, mixedHexbinY);
     if (!hexbinView.is2DView())
         return 42;
 
