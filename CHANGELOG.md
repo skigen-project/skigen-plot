@@ -33,6 +33,8 @@ All notable changes to SkigenPlot will be documented in this file.
   and triangle meshes.
 - NaN/Inf masking and finite color-range calculation for heatmaps and filled
   or line contours.
+- Finite coordinate filtering for hexbin and safe positive-weight
+  normalization for pie charts.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

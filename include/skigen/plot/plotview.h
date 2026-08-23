@@ -315,7 +315,8 @@ public:
     // ── 2D hexbin (hexagonally-binned density) ──────────────────────
 
     /// @brief Hexagonally bin points (@p x, @p y) into a @p gridsize-wide grid
-    ///   and colour each hexagon by its count using @p cmap.
+    ///   and colour each hexagon by its count using @p cmap. Non-finite pairs
+    ///   are omitted; all-invalid input leaves the view unchanged.
     template <typename DX, typename DY>
     void hexbin(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
                 int gridsize = 20, Colormap cmap = Colormap::Viridis)
@@ -329,8 +330,9 @@ public:
 
     // ── 2D pie chart ────────────────────────────────────────────────
 
-    /// @brief Draw proportional wedges for @p values (normalised to their sum),
-    ///   starting at the top and proceeding clockwise.
+    /// @brief Draw proportional wedges for finite positive @p values (normalised
+    ///   to their sum), starting at the top and proceeding clockwise. Other
+    ///   values are omitted; no positive finite values leave the view unchanged.
     template <typename Derived>
     void pie(const Eigen::MatrixBase<Derived>& values)
     {

@@ -225,6 +225,24 @@ int main(int argc, char* argv[])
     if (!matrixView.is2DView())
         return 40;
 
+    Skigen::Plot::PlotView hexbinView;
+    hexbinView.hexbin(invalidValues, invalidValues);
+    if (hexbinView.is2DView())
+        return 41;
+    hexbinView.hexbin(x, invalidValues);
+    if (!hexbinView.is2DView())
+        return 42;
+
+    Skigen::Plot::PlotView pieView;
+    pieView.pie(invalidValues);
+    if (pieView.is2DView())
+        return 43;
+    Eigen::VectorXf pieValues(3);
+    pieValues << 1.0f, std::numeric_limits<float>::infinity(), 2.0f;
+    pieView.pie(pieValues);
+    if (!pieView.is2DView())
+        return 44;
+
     const auto stems = view.stem(x, y, {.label = "stems"});
     if (!stems || !view.containsSeries(stems)
         || !view.updateSeriesData(stems, x, updatedY)

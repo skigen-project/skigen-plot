@@ -58,6 +58,8 @@ Point clouds and meshes require finite `N x 3` vertices. Mesh faces require an
 leaves the current view unchanged.
 Heatmaps and contours derive color ranges from finite cells and omit invalid
 cells. An all-invalid matrix leaves the current view unchanged.
+Hexbin omits non-finite coordinate pairs. Pie charts omit non-finite and
+non-positive weights; an all-invalid input leaves the view unchanged.
 
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,

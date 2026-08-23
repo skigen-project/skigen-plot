@@ -1310,12 +1310,15 @@ auto PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
 void PlotView::pieImpl(std::span<const float> values) {
     const int n = static_cast<int>(values.size());
     if (n == 0) return;
+
+    double total = 0.0;
+    for (float value : values) {
+        if (std::isfinite(value) && value > 0.0f)
+            total += value;
+    }
+    if (total <= 0.0f) return;
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
-
-    float total = 0.0f;
-    for (float v : values) total += std::max(0.0f, v);
-    if (total <= 0.0f) return;
 
     constexpr float pi = 3.14159265358979323846f;
     constexpr int kArcSteps = 48;       // arc tessellation per full circle
@@ -1325,7 +1328,10 @@ void PlotView::pieImpl(std::span<const float> values) {
     // Each wedge becomes its own Fill series so it picks up a palette colour.
     float angle = pi * 0.5f;            // start at the top
     for (int i = 0; i < n; ++i) {
-        float frac = std::max(0.0f, values[static_cast<std::size_t>(i)]) / total;
+        const float value = values[static_cast<std::size_t>(i)];
+        if (!std::isfinite(value) || value <= 0.0f)
+            continue;
+        float frac = static_cast<float>(static_cast<double>(value) / total);
         float sweep = frac * 2.0f * pi;
         int steps = std::max(1, static_cast<int>(std::ceil(frac * kArcSteps)));
         float a0 = angle;
@@ -1591,18 +1597,19 @@ void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
 
 void PlotView::hexbinImpl(std::span<const float> x, std::span<const float> y,
                           int gridsize, Colormap cmap) {
-    const int n = static_cast<int>(std::min(x.size(), y.size()));
-    if (n == 0) return;
+    const auto indices = finiteSampleIndices(std::min(x.size(), y.size()), x, y);
+    if (indices.empty()) return;
     gridsize = std::max(2, gridsize);
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
-    float xlo = x[0], xhi = x[0], ylo = y[0], yhi = y[0];
-    for (int i = 0; i < n; ++i) {
-        xlo = std::min(xlo, x[static_cast<std::size_t>(i)]);
-        xhi = std::max(xhi, x[static_cast<std::size_t>(i)]);
-        ylo = std::min(ylo, y[static_cast<std::size_t>(i)]);
-        yhi = std::max(yhi, y[static_cast<std::size_t>(i)]);
+    const std::size_t first = indices.front();
+    float xlo = x[first], xhi = x[first], ylo = y[first], yhi = y[first];
+    for (std::size_t i : indices) {
+        xlo = std::min(xlo, x[i]);
+        xhi = std::max(xhi, x[i]);
+        ylo = std::min(ylo, y[i]);
+        yhi = std::max(yhi, y[i]);
     }
     float xrange = std::max(xhi - xlo, 1e-6f);
     float yrange = std::max(yhi - ylo, 1e-6f);
@@ -1626,8 +1633,8 @@ void PlotView::hexbinImpl(std::span<const float> x, std::span<const float> y,
     };
 
     int maxCount = 0;
-    for (int i = 0; i < n; ++i) {
-        float px = x[static_cast<std::size_t>(i)], py = y[static_cast<std::size_t>(i)];
+    for (std::size_t i : indices) {
+        float px = x[i], py = y[i];
         int r = std::clamp(static_cast<int>(std::round((py - ylo) / dyRow)), 0, rows);
         float ox = (r & 1) ? dx * 0.5f : 0.0f;
         int c = std::clamp(static_cast<int>(std::round((px - xlo - ox) / dx)), 0, gridsize);
