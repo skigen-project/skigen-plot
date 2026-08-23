@@ -44,6 +44,9 @@ public:
 
     // ── 2D line plot (adds a series) ────────────────────────────────
 
+    /// @brief Add finite paired coordinates, truncating mismatched inputs to
+    ///   the shorter length. Returns an invalid handle when no finite pair
+    ///   remains.
     template <typename DerivedX, typename DerivedY>
     auto plot(const Eigen::MatrixBase<DerivedX>& x,
               const Eigen::MatrixBase<DerivedY>& y,
@@ -58,6 +61,9 @@ public:
 
     // ── 2D scatter plot (adds a series) ─────────────────────────────
 
+    /// @brief Add finite paired coordinates, truncating mismatched inputs to
+    ///   the shorter length. Returns an invalid handle when no finite pair
+    ///   remains.
     template <typename DerivedX, typename DerivedY>
     auto scatter(const Eigen::MatrixBase<DerivedX>& x,
                  const Eigen::MatrixBase<DerivedY>& y,
@@ -111,8 +117,9 @@ public:
 
     /// @brief Bin @p values into @p bins uniform bins and draw the counts as
     ///   filled bars. When @p density is true, bars are normalised so their
-    ///   total area is 1. Use @p bins <= 0 for a Sturges-rule default. Returns
-    ///   an invalid handle when @p values is empty.
+    ///   total area is 1. Non-finite observations are ignored. Use @p bins <= 0
+    ///   for a Sturges-rule default. Returns an invalid handle when no finite
+    ///   observation remains.
     template <typename Derived>
     auto hist(const Eigen::MatrixBase<Derived>& values,
               int bins = 0,

@@ -25,6 +25,8 @@ All notable changes to SkigenPlot will be documented in this file.
   intentional axis inversion through reversed endpoints.
 - Circle, square, triangle, plus, and cross scatter markers, including hollow
   rendering for closed shapes.
+- Deterministic finite-data filtering for line, scatter, series updates, and
+  histograms; creation fails predictably when no usable values remain.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

@@ -26,6 +26,20 @@ int main(int argc, char* argv[])
     Eigen::VectorXf y(3);
     y << 1.0f, 2.0f, 3.0f;
 
+    Eigen::VectorXf nonFiniteX(3);
+    nonFiniteX << 0.0f, std::numeric_limits<float>::infinity(),
+        std::numeric_limits<float>::quiet_NaN();
+    Eigen::VectorXf nonFiniteY = Eigen::VectorXf::Ones(3);
+    Skigen::Plot::PlotView validationView;
+    const auto filtered = validationView.scatter(nonFiniteX, nonFiniteY);
+    nonFiniteX(0) = std::numeric_limits<float>::quiet_NaN();
+    if (!filtered || validationView.scatter(nonFiniteX, nonFiniteY)
+        || validationView.plot(Eigen::VectorXf{}, Eigen::VectorXf{})) {
+        return 33;
+    }
+    if (!validationView.updateSeriesData(filtered, nonFiniteX, nonFiniteY))
+        return 34;
+
     const auto line = view.plot(x, y, {.label = "line"});
     const auto points = view.scatter(x, y, {.label = "points"});
     if (!line || !points || line == points)
@@ -131,6 +145,15 @@ int main(int argc, char* argv[])
     Eigen::VectorXf empty;
     if (view.hist(empty))
         return 17;
+    Eigen::VectorXf histogramValues(4);
+    histogramValues << 1.0f, 2.0f,
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity();
+    if (!view.hist(histogramValues, 2))
+        return 35;
+    histogramValues.setConstant(std::numeric_limits<float>::quiet_NaN());
+    if (view.hist(histogramValues, 2))
+        return 36;
 
     const auto bars = view.bar(x, y, 0.8f, {.label = "bars"});
     const auto horizontalBars = view.barh(x, y);

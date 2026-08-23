@@ -18,8 +18,10 @@
 #include <atomic>
 #include <cmath>
 #include <expected>
+#include <iterator>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
@@ -554,12 +556,26 @@ PlotView::~PlotView() {
 auto PlotView::addLineSeries(std::span<const float> x,
                              std::span<const float> y,
                              const PlotStyle& style) -> SeriesHandle {
+    const auto count = std::min(x.size(), y.size());
+    if (std::ranges::none_of(std::views::iota(std::size_t{0}, count),
+                             [&](std::size_t i) {
+                                 return std::isfinite(x[i]) && std::isfinite(y[i]);
+                             })) {
+        return {};
+    }
     return addSeriesImpl(static_cast<int>(SeriesKind::Line), x, y, style);
 }
 
 auto PlotView::addScatterSeries(std::span<const float> x,
                                 std::span<const float> y,
                                 const PlotStyle& style) -> SeriesHandle {
+    const auto count = std::min(x.size(), y.size());
+    if (std::ranges::none_of(std::views::iota(std::size_t{0}, count),
+                             [&](std::size_t i) {
+                                 return std::isfinite(x[i]) && std::isfinite(y[i]);
+                             })) {
+        return {};
+    }
     return addSeriesImpl(static_cast<int>(SeriesKind::Scatter), x, y, style);
 }
 
@@ -569,19 +585,21 @@ auto PlotView::addSeriesImpl(int kindInt,
                              const PlotStyle& style,
                              SeriesHandle groupHandle) -> SeriesHandle {
     auto kind = static_cast<SeriesKind>(kindInt);
-    auto n = static_cast<int>(std::min(x.size(), y.size()));
+    const auto count = std::min(x.size(), y.size());
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
     Series2D series;
     series.id = groupHandle ? groupHandle.m_id : nextSeriesId();
     series.kind = kind;
-    series.vertices.resize(static_cast<std::size_t>(n) * 2);
-    for (int i = 0; i < n; ++i) {
-        series.vertices[static_cast<std::size_t>(i) * 2]     = x[static_cast<std::size_t>(i)];
-        series.vertices[static_cast<std::size_t>(i) * 2 + 1] = y[static_cast<std::size_t>(i)];
+    series.vertices.reserve(count * 2);
+    for (std::size_t i = 0; i < count; ++i) {
+        if (!std::isfinite(x[i]) || !std::isfinite(y[i]))
+            continue;
+        series.vertices.push_back(x[i]);
+        series.vertices.push_back(y[i]);
     }
-    series.vertexCount = n;
+    series.vertexCount = static_cast<int>(series.vertices.size() / 2);
 
     int colorIdx = d->nextColorIndex;
     d->nextColorIndex++;
@@ -657,12 +675,15 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
     if (seriesIt->kind == SeriesKind::Fill)
         return false;
 
-    seriesIt->vertices.resize(count * 2);
+    seriesIt->vertices.clear();
+    seriesIt->vertices.reserve(count * 2);
     for (std::size_t i = 0; i < count; ++i) {
-        seriesIt->vertices[i * 2] = x[i];
-        seriesIt->vertices[i * 2 + 1] = y[i];
+        if (!std::isfinite(x[i]) || !std::isfinite(y[i]))
+            continue;
+        seriesIt->vertices.push_back(x[i]);
+        seriesIt->vertices.push_back(y[i]);
     }
-    seriesIt->vertexCount = static_cast<int>(count);
+    seriesIt->vertexCount = static_cast<int>(seriesIt->vertices.size() / 2);
     seriesIt->dirty = true;
     recomputeBounds();
     d->gridDirty = true;
@@ -866,11 +887,16 @@ void appendQuad(std::vector<float>& out,
 
 auto PlotView::histImpl(std::span<const float> values, int bins, bool density,
                         const PlotStyle& style) -> SeriesHandle {
-    const int n = static_cast<int>(values.size());
+    std::vector<float> finiteValues;
+    finiteValues.reserve(values.size());
+    std::ranges::copy_if(values, std::back_inserter(finiteValues),
+                         [](float value) { return std::isfinite(value); });
+    const int n = static_cast<int>(finiteValues.size());
     if (n == 0) return {};
 
-    float lo = values[0], hi = values[0];
-    for (float v : values) { lo = std::min(lo, v); hi = std::max(hi, v); }
+    const auto [minIt, maxIt] = std::ranges::minmax_element(finiteValues);
+    float lo = *minIt;
+    float hi = *maxIt;
     if (hi <= lo) hi = lo + 1.0f;
 
     // Sturges' rule default: ceil(log2(n)) + 1.
@@ -879,7 +905,7 @@ auto PlotView::histImpl(std::span<const float> values, int bins, bool density,
 
     std::vector<int> counts(static_cast<std::size_t>(bins), 0);
     const float binW = (hi - lo) / static_cast<float>(bins);
-    for (float v : values) {
+    for (float v : finiteValues) {
         int b = static_cast<int>((v - lo) / binW);
         b = std::clamp(b, 0, bins - 1);
         counts[static_cast<std::size_t>(b)]++;

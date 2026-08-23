@@ -87,6 +87,11 @@ when other series are removed. Mutating or removing an invalid, stale, or
 foreign handle returns `false` and leaves the view unchanged. Creation with
 insufficient input returns an invalid handle.
 
+Line and scatter creation and updates truncate mismatched vectors to their
+shorter length and discard coordinate pairs containing NaN or infinity.
+Histograms ignore non-finite observations when computing ranges, counts, and
+density. Creation returns an invalid handle when no finite data remains.
+
 A stem plot's vertical geometry and marker tips share one handle. Data, style,
 visibility, and removal operations therefore apply to the complete composite.
 
