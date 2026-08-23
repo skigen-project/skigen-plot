@@ -43,10 +43,13 @@ int main(int argc, char* argv[]) {
 ```
 
 `plot()`, `scatter()`, `hist()`, `bar()`, `barh()`, `fillBetween()`, `step()`,
-`errorbar()`, `stem()`, `boxplot()`, `violinplot()`, `quiver()`, and `pie()`
-return stable `SeriesHandle` values.
+`errorbar()`, `stem()`, `boxplot()`, `violinplot()`, `quiver()`, `pie()`,
+`imshow()`, `contour()`, `contourf()`, and `hexbin()` return stable
+`SeriesHandle` values.
 Use `updateSeriesData()`, `setSeriesStyle()`, `setSeriesVisible()`, and
 `removeSeries()` to modify one series without clearing the rest of the view.
+Field-plot data is immutable in v1, so `updateSeriesData()` returns `false`
+for those handles; style, visibility, and removal remain supported.
 Visible labelled series can be shown in a theme-aware legend with automatic
 or explicit corner placement.
 

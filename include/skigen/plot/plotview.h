@@ -249,14 +249,14 @@ public:
     ///   to [min, max] across finite cells unless @p vmin < @p vmax is given.
     ///   Non-finite cells are omitted; all-invalid input leaves the view unchanged.
     template <typename Derived>
-    void imshow(const Eigen::MatrixBase<Derived>& m,
+    auto imshow(const Eigen::MatrixBase<Derived>& m,
                 Colormap cmap = Colormap::Viridis,
-                float vmin = 0.0f, float vmax = 0.0f)
+                float vmin = 0.0f, float vmax = 0.0f) -> SeriesHandle
     {
         Eigen::MatrixXf mf = m.derived().template cast<float>().eval();
-        imshowImpl({mf.data(), static_cast<std::size_t>(mf.size())},
-                   static_cast<int>(mf.rows()), static_cast<int>(mf.cols()),
-                   cmap, vmin, vmax);
+        return imshowImpl({mf.data(), static_cast<std::size_t>(mf.size())},
+                          static_cast<int>(mf.rows()), static_cast<int>(mf.cols()),
+                          cmap, vmin, vmax);
     }
 
     // ── 2D contour lines / filled contour ───────────────────────────
@@ -266,26 +266,26 @@ public:
     ///   maps to grid coordinate (c, rows-1-r), matching imshow(). Cells with
     ///   non-finite corners are omitted. Values of @p levels below 1 use 1.
     template <typename Derived>
-    void contour(const Eigen::MatrixBase<Derived>& z, int levels = 8,
-                 const PlotStyle& style = {})
+    auto contour(const Eigen::MatrixBase<Derived>& z, int levels = 8,
+                 const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::MatrixXf zf = z.derived().template cast<float>().eval();
-        contourImpl({zf.data(), static_cast<std::size_t>(zf.size())},
-                    static_cast<int>(zf.rows()), static_cast<int>(zf.cols()),
-                    levels, style);
+        return contourImpl({zf.data(), static_cast<std::size_t>(zf.size())},
+                           static_cast<int>(zf.rows()), static_cast<int>(zf.cols()),
+                           levels, style);
     }
 
     /// @brief Filled contour: colour each finite cell by its value band using
     ///   @p cmap (cell-level quantisation). Companion to contour(). Values of
     ///   @p levels below 2 use 2.
     template <typename Derived>
-    void contourf(const Eigen::MatrixBase<Derived>& z, int levels = 10,
-                  Colormap cmap = Colormap::Viridis)
+    auto contourf(const Eigen::MatrixBase<Derived>& z, int levels = 10,
+                  Colormap cmap = Colormap::Viridis) -> SeriesHandle
     {
         Eigen::MatrixXf zf = z.derived().template cast<float>().eval();
-        contourfImpl({zf.data(), static_cast<std::size_t>(zf.size())},
-                     static_cast<int>(zf.rows()), static_cast<int>(zf.cols()),
-                     levels, cmap);
+        return contourfImpl({zf.data(), static_cast<std::size_t>(zf.size())},
+                            static_cast<int>(zf.rows()), static_cast<int>(zf.cols()),
+                            levels, cmap);
     }
 
     // ── 2D violin plot (KDE density per group) ──────────────────────
@@ -324,14 +324,15 @@ public:
     ///   are omitted; all-invalid input leaves the view unchanged. Values of
     ///   @p gridsize below 2 use 2.
     template <typename DX, typename DY>
-    void hexbin(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
+    auto hexbin(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
                 int gridsize = 20, Colormap cmap = Colormap::Viridis)
+        -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf yf = y.derived().template cast<float>().eval();
-        hexbinImpl({xf.data(), static_cast<std::size_t>(xf.size())},
-                   {yf.data(), static_cast<std::size_t>(yf.size())},
-                   gridsize, cmap);
+        return hexbinImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                          {yf.data(), static_cast<std::size_t>(yf.size())},
+                          gridsize, cmap);
     }
 
     // ── 2D pie chart ────────────────────────────────────────────────
@@ -494,6 +495,13 @@ private:
                        const PlotStyle& style,
                        SeriesHandle groupHandle = {},
                        bool supportsDataUpdate = false) -> SeriesHandle;
+    auto addFieldSeries(std::vector<float> vertices, bool coloredTriangles,
+                        const BoundingBox2D& bounds,
+                        const PlotStyle& style = {},
+                        std::optional<Colormap> colormap = std::nullopt,
+                        float vmin = 0.0f, float vmax = 1.0f)
+        -> SeriesHandle;
+    void refreshColorbar();
 
     auto histImpl(std::span<const float> values, int bins, bool density,
                   const PlotStyle& style) -> SeriesHandle;
@@ -510,17 +518,17 @@ private:
     auto errorbarImpl(std::span<const float> x, std::span<const float> y,
                       std::span<const float> yerr, const PlotStyle& style)
         -> SeriesHandle;
-    void imshowImpl(std::span<const float> data, int rows, int cols,
-                    Colormap cmap, float vmin, float vmax);
-    void contourImpl(std::span<const float> data, int rows, int cols,
-                     int levels, const PlotStyle& style);
-    void contourfImpl(std::span<const float> data, int rows, int cols,
-                      int levels, Colormap cmap);
+    auto imshowImpl(std::span<const float> data, int rows, int cols,
+                    Colormap cmap, float vmin, float vmax) -> SeriesHandle;
+    auto contourImpl(std::span<const float> data, int rows, int cols,
+                     int levels, const PlotStyle& style) -> SeriesHandle;
+    auto contourfImpl(std::span<const float> data, int rows, int cols,
+                      int levels, Colormap cmap) -> SeriesHandle;
     auto quiverImpl(std::span<const float> x, std::span<const float> y,
                     std::span<const float> u, std::span<const float> v,
                     const PlotStyle& style) -> SeriesHandle;
-    void hexbinImpl(std::span<const float> x, std::span<const float> y,
-                    int gridsize, Colormap cmap);
+    auto hexbinImpl(std::span<const float> x, std::span<const float> y,
+                    int gridsize, Colormap cmap) -> SeriesHandle;
     auto pieImpl(std::span<const float> values) -> SeriesHandle;
 
     void setPointCloudData(std::span<const float> data, int vertexCount,

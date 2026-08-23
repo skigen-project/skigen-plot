@@ -254,15 +254,48 @@ int main(int argc, char* argv[])
     Skigen::Plot::PlotView matrixView;
     Eigen::MatrixXf invalidMatrix = Eigen::MatrixXf::Constant(
         2, 2, std::numeric_limits<float>::quiet_NaN());
-    matrixView.imshow(invalidMatrix);
-    matrixView.contourf(invalidMatrix);
-    matrixView.contour(invalidMatrix);
+    if (matrixView.imshow(invalidMatrix)
+        || matrixView.contourf(invalidMatrix)
+        || matrixView.contour(invalidMatrix)) {
+        return 39;
+    }
     if (matrixView.is2DView())
         return 39;
     invalidMatrix(0, 0) = 1.0f;
-    matrixView.imshow(invalidMatrix);
-    if (!matrixView.is2DView())
+    Eigen::MatrixXf lifecycleField(2, 2);
+    lifecycleField << 0.0f, 1.0f,
+                      1.0f, 0.0f;
+    const auto image = matrixView.imshow(invalidMatrix);
+    const auto filledContours = matrixView.contourf(lifecycleField, 3);
+    const auto contours = matrixView.contour(
+        lifecycleField, 3,
+        {.color = Eigen::Vector4f(0.2f, 0.3f, 0.4f, 1.0f)});
+    if (!image || !filledContours || !contours
+        || image == filledContours || image == contours
+        || filledContours == contours
+        || !matrixView.containsSeries(image)
+        || !matrixView.containsSeries(filledContours)
+        || !matrixView.containsSeries(contours)
+        || !matrixView.is2DView()) {
         return 40;
+    }
+    if (matrixView.updateSeriesData(image, x, y)
+        || !matrixView.setSeriesStyle(image, {.opacity = 0.45f})
+        || !matrixView.setSeriesStyle(
+            contours, {.color = Eigen::Vector4f(0.8f, 0.1f, 0.2f, 1.0f),
+                       .opacity = 0.6f})
+        || !matrixView.setSeriesVisible(image, false)
+        || !matrixView.removeSeries(filledContours)
+        || matrixView.containsSeries(filledContours)
+        || !matrixView.containsSeries(contours)) {
+        return 56;
+    }
+    Skigen::Plot::PlotView foreignFieldView;
+    if (foreignFieldView.containsSeries(image)
+        || foreignFieldView.setSeriesVisible(image, false)
+        || foreignFieldView.removeSeries(image)) {
+        return 57;
+    }
 
     Skigen::Plot::PlotView hexbinView;
     hexbinView.hexbin(invalidValues, invalidValues);
@@ -270,9 +303,19 @@ int main(int argc, char* argv[])
         return 41;
     Eigen::VectorXf mixedHexbinY = invalidValues;
     mixedHexbinY[0] = 1.0f;
-    hexbinView.hexbin(x, mixedHexbinY);
-    if (!hexbinView.is2DView())
+    const auto hexagons = hexbinView.hexbin(x, mixedHexbinY);
+    if (!hexagons || !hexbinView.containsSeries(hexagons)
+        || !hexbinView.is2DView()) {
         return 42;
+    }
+    if (!hexbinView.setSeriesVisible(hexagons, false)
+        || hexbinView.is2DView()
+        || !hexbinView.setSeriesVisible(hexagons, true)
+        || !hexbinView.removeSeries(hexagons)
+        || hexbinView.containsSeries(hexagons)
+        || hexbinView.setSeriesStyle(hexagons, {.opacity = 0.5f})) {
+        return 58;
+    }
 
     Skigen::Plot::PlotView pieView;
     if (pieView.pie(invalidValues) || pieView.is2DView())
@@ -340,6 +383,12 @@ int main(int argc, char* argv[])
         || view.containsSeries(stems)
         || view.stem(empty, y)) {
         return 32;
+    }
+
+    matrixView.clear();
+    if (matrixView.containsSeries(image) || matrixView.containsSeries(contours)
+        || matrixView.is2DView()) {
+        return 59;
     }
 
     view.clear();

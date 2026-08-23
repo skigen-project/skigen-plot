@@ -19,6 +19,9 @@ All notable changes to SkigenPlot will be documented in this file.
   operations.
 - Composite stem plots return one stable handle for updating, styling, hiding,
   or removing their stems and markers together.
+- Heatmap, contour, filled-contour, and hexbin plots return independent stable
+  handles for styling, visibility, and removal, allowing field plots to compose
+  without replacing earlier field geometry.
 - Theme-aware legends for labelled 2D series with automatic or fixed-corner
   placement.
 - Independent x/y axis limits with getters, autoscale reset, validation, and

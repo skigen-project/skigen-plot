@@ -176,11 +176,34 @@ struct Series2D {
     int vbCapacity = 0;
 };
 
+enum class FieldSeriesKind { ColoredTriangles, ContourLines };
+
+struct FieldSeries2D {
+    std::uint64_t id = 0;
+    FieldSeriesKind kind = FieldSeriesKind::ColoredTriangles;
+    std::vector<float> vertices;
+    BoundingBox2D bounds;
+    int vertexCount = 0;
+    Eigen::Vector4f color{0.1f, 0.1f, 0.1f, 0.9f};
+    bool visible = true;
+    bool colormapped = false;
+    Colormap colormap = Colormap::Viridis;
+    float vmin = 0.0f;
+    float vmax = 1.0f;
+    float opacity = 1.0f;
+    bool dirty = true;
+    QRhiBuffer* vb = nullptr;
+    QRhiBuffer* ub = nullptr;
+    QRhiShaderResourceBindings* srb = nullptr;
+    int vbCapacity = 0;
+};
+
 // ── PIMPL ──────────────────────────────────────────────────────────
 
 struct PlotView::Impl {
     // 2D series
     std::vector<Series2D> series2d;
+    std::vector<FieldSeries2D> fieldSeries2d;
     int nextColorIndex = 0;
     std::optional<SeriesHandle> telemetrySeries;
     std::vector<float> telemetryRing;
@@ -195,35 +218,12 @@ struct PlotView::Impl {
     std::unique_ptr<QRhiGraphicsPipeline> heatmapPipeline;
     std::unique_ptr<QRhiGraphicsPipeline> gridPipeline;
 
-    // Heatmap (imshow) — single per-view dataset of per-vertex coloured
-    // triangles: interleaved (vec2 position, vec4 colour), stride 24.
-    std::unique_ptr<QRhiBuffer> heatmapBuffer;
-    std::unique_ptr<QRhiBuffer> heatmapUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> heatmapSrb;
-    std::vector<float> heatmapVertices;
-    int heatmapVertexCount = 0;
-    int heatmapCapacity = 0;
-    bool hasHeatmap = false;
-    bool heatmapDirty = false;
-
-    // Colorbar legend state (set by imshow / contourf).
+    // Colorbar legend state follows the latest visible colormapped field.
     bool showColorbar = false;
     bool hasColormappedData = false;
     Colormap colorbarMap = Colormap::Viridis;
     float colorbarVmin = 0.0f;
     float colorbarVmax = 1.0f;
-
-    // Contour lines — vec2 line segments drawn with the grid pipeline,
-    // uniform colour via contourUniformBuffer.
-    std::unique_ptr<QRhiBuffer> contourBuffer;
-    std::unique_ptr<QRhiBuffer> contourUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> contourSrb;
-    std::vector<float> contourVertices;
-    Eigen::Vector4f contourColor{0.1f, 0.1f, 0.1f, 0.9f};
-    int contourVertexCount = 0;
-    int contourCapacity = 0;
-    bool hasContour = false;
-    bool contourDirty = false;
 
     // 3D pipelines
     std::unique_ptr<QRhiGraphicsPipeline> point3dPipeline;
@@ -332,11 +332,17 @@ struct PlotView::Impl {
     QPoint lastMousePos;
 
     bool has2D() const {
-        return std::ranges::any_of(series2d, [](const Series2D& series) {
+        const bool hasOrdinarySeries = std::ranges::any_of(
+            series2d, [](const Series2D& series) {
             const int count = series.kind == SeriesKind::Line
                 ? series.sourceVertexCount : series.vertexCount;
             return series.visible && count > 0;
-        }) || hasHeatmap || hasContour;
+        });
+        const bool hasFieldSeries = std::ranges::any_of(
+            fieldSeries2d, [](const FieldSeries2D& series) {
+                return series.visible && series.vertexCount > 0;
+            });
+        return hasOrdinarySeries || hasFieldSeries;
     }
     bool has3D() const { return mode3d != RenderMode3D::None; }
     bool hasData() const { return has2D() || has3D(); }
@@ -637,6 +643,11 @@ PlotView::~PlotView() {
         delete s.ub;
         delete s.srb;
     }
+    for (auto& s : d->fieldSeries2d) {
+        delete s.vb;
+        delete s.ub;
+        delete s.srb;
+    }
 }
 
 // ── Data setters ───────────────────────────────────────────────────
@@ -828,6 +839,20 @@ auto PlotView::setSeriesStyle(SeriesHandle handle,
         series.label = found ? QString{} : style.label;
         found = true;
     }
+    for (auto& series : d->fieldSeries2d) {
+        if (series.id != handle.m_id)
+            continue;
+        if (series.kind == FieldSeriesKind::ContourLines) {
+            series.color = style.color.value_or(series.color);
+            series.color.w() = std::clamp(style.opacity, 0.0f, 1.0f);
+        } else {
+            series.opacity = std::clamp(style.opacity, 0.0f, 1.0f);
+            for (std::size_t i = 5; i < series.vertices.size(); i += 6)
+                series.vertices[i] = series.opacity;
+            series.dirty = true;
+        }
+        found = true;
+    }
     if (!found)
         return false;
     if (d->textOverlay) d->textOverlay->update();
@@ -843,8 +868,15 @@ auto PlotView::setSeriesVisible(SeriesHandle handle, bool visible) -> bool {
             found = true;
         }
     }
+    for (auto& series : d->fieldSeries2d) {
+        if (series.id == handle.m_id) {
+            series.visible = visible;
+            found = true;
+        }
+    }
     if (!found)
         return false;
+    refreshColorbar();
     recomputeBounds();
     d->gridDirty = true;
     if (d->textOverlay) d->textOverlay->update();
@@ -853,9 +885,14 @@ auto PlotView::setSeriesVisible(SeriesHandle handle, bool visible) -> bool {
 }
 
 auto PlotView::containsSeries(SeriesHandle handle) const -> bool {
-    return std::ranges::any_of(d->series2d, [handle](const Series2D& series) {
+    const bool ordinary = std::ranges::any_of(
+        d->series2d, [handle](const Series2D& series) {
         return series.id == handle.m_id;
     });
+    return ordinary || std::ranges::any_of(
+        d->fieldSeries2d, [handle](const FieldSeries2D& series) {
+            return series.id == handle.m_id;
+        });
 }
 
 auto PlotView::removeSeries(SeriesHandle handle) -> bool {
@@ -868,11 +905,23 @@ auto PlotView::removeSeries(SeriesHandle handle) -> bool {
         delete series.srb;
         found = true;
     }
+    for (auto& series : d->fieldSeries2d) {
+        if (series.id != handle.m_id)
+            continue;
+        delete series.vb;
+        delete series.ub;
+        delete series.srb;
+        found = true;
+    }
     if (!found)
         return false;
     std::erase_if(d->series2d, [handle](const Series2D& series) {
         return series.id == handle.m_id;
     });
+    std::erase_if(d->fieldSeries2d, [handle](const FieldSeries2D& series) {
+        return series.id == handle.m_id;
+    });
+    refreshColorbar();
     recomputeBounds();
     d->gridDirty = true;
     if (d->textOverlay) d->textOverlay->update();
@@ -994,6 +1043,69 @@ auto PlotView::addFillSeries(std::span<const float> triangleVertices,
     d->gridDirty = true;
     update();
     return handle;
+}
+
+auto PlotView::addFieldSeries(std::vector<float> vertices,
+                              bool coloredTriangles,
+                              const BoundingBox2D& bounds,
+                              const PlotStyle& style,
+                              std::optional<Colormap> colormap,
+                              float vmin, float vmax) -> SeriesHandle {
+    if (vertices.empty())
+        return {};
+    if (!d->has2D() && !d->has3D())
+        d->interactionTool = InteractionTool::Pan;
+
+    FieldSeries2D series;
+    series.id = nextSeriesId();
+    series.kind = coloredTriangles
+        ? FieldSeriesKind::ColoredTriangles : FieldSeriesKind::ContourLines;
+    series.vertices = std::move(vertices);
+    series.bounds = bounds;
+    const int stride = coloredTriangles ? 6 : 2;
+    series.vertexCount = static_cast<int>(series.vertices.size()) / stride;
+    series.color = style.color.value_or(
+        d->theme.seriesColors[static_cast<std::size_t>(d->nextColorIndex++)
+                              % d->theme.seriesColors.size()]);
+    if (style.opacity < 1.0f)
+        series.color.w() = style.opacity;
+    series.opacity = std::clamp(style.opacity, 0.0f, 1.0f);
+    series.colormapped = colormap.has_value();
+    series.colormap = colormap.value_or(Colormap::Viridis);
+    series.vmin = vmin;
+    series.vmax = vmax;
+
+    if (d->pipelineReady) {
+        auto* r = rhi();
+        series.ub = makeRawUB(r, 96u);
+        series.srb = makeSrb(r, series.ub);
+        const int floats = std::max(static_cast<int>(series.vertices.size()), 1);
+        series.vb = makeRawDynBuf(r, QRhiBuffer::VertexBuffer,
+                                  quint32(floats * sizeof(float)));
+        series.vbCapacity = floats;
+    }
+
+    const SeriesHandle handle(series.id);
+    d->fieldSeries2d.push_back(std::move(series));
+    refreshColorbar();
+    recomputeBounds();
+    d->gridDirty = true;
+    update();
+    return handle;
+}
+
+void PlotView::refreshColorbar() {
+    d->hasColormappedData = false;
+    for (auto it = d->fieldSeries2d.rbegin();
+         it != d->fieldSeries2d.rend(); ++it) {
+        if (!it->visible || !it->colormapped)
+            continue;
+        d->hasColormappedData = true;
+        d->colorbarMap = it->colormap;
+        d->colorbarVmin = it->vmin;
+        d->colorbarVmax = it->vmax;
+        break;
+    }
 }
 
 namespace {
@@ -1574,13 +1686,12 @@ auto PlotView::pieImpl(std::span<const float> values) -> SeriesHandle {
     return handle;
 }
 
-void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
-                          Colormap cmap, float vmin, float vmax) {
-    if (rows <= 0 || cols <= 0) return;
+auto PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
+                          Colormap cmap, float vmin, float vmax)
+    -> SeriesHandle {
+    if (rows <= 0 || cols <= 0) return {};
     const auto dataRange = finiteRange(data);
-    if (!dataRange) return;
-    if (!d->has2D() && !d->has3D())
-        d->interactionTool = InteractionTool::Pan;
+    if (!dataRange) return {};
 
     // Eigen storage is column-major: element (r, c) is at index c*rows + r.
     auto at = [&](int r, int c) -> float {
@@ -1596,8 +1707,7 @@ void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
     const float range = std::max(vmax - vmin, 1e-12f);
 
     // Interleaved (vec2 pos, vec4 colour) per vertex, 6 vertices per cell.
-    auto& verts = d->heatmapVertices;
-    verts.clear();
+    std::vector<float> verts;
     verts.reserve(static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols) * 36);
     auto push = [&](float x, float y, const Eigen::Vector4f& col) {
         verts.insert(verts.end(), {x, y, col.x(), col.y(), col.z(), col.w()});
@@ -1618,37 +1728,18 @@ void PlotView::imshowImpl(std::span<const float> data, int rows, int cols,
             push(x0, y0, col); push(x1, y1, col); push(x0, y1, col);
         }
     }
-    d->heatmapVertexCount = static_cast<int>(verts.size() / 6);
-    d->hasHeatmap = true;
-    d->heatmapDirty = true;
-    d->hasColormappedData = true;
-    d->colorbarMap = cmap;
-    d->colorbarVmin = vmin;
-    d->colorbarVmax = vmax;
-
-    // Bounds: the full cell grid.
-    d->bounds2d = BoundingBox2D();
-    BoundingBox2D bb;
-    bb.min = Eigen::Vector2f(0.0f, 0.0f);
-    bb.max = Eigen::Vector2f(static_cast<float>(cols), static_cast<float>(rows));
-    d->bounds2d = d->bounds2d.merge(bb);
-
-    if (d->pipelineReady) {
-        auto* r = rhi();
-        int floats = std::max(static_cast<int>(verts.size()), 1);
-        d->heatmapBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
-                                      quint32(floats * sizeof(float)));
-        d->heatmapCapacity = floats;
-    }
-    d->gridDirty = true;
-    update();
+    BoundingBox2D bounds;
+    bounds.min = Eigen::Vector2f(0.0f, 0.0f);
+    bounds.max = Eigen::Vector2f(static_cast<float>(cols),
+                                 static_cast<float>(rows));
+    return addFieldSeries(std::move(verts), true, bounds, {}, cmap, vmin, vmax);
 }
 
-void PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
-                            int levels, Colormap cmap) {
-    if (rows <= 0 || cols <= 0) return;
+auto PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
+                            int levels, Colormap cmap) -> SeriesHandle {
+    if (rows <= 0 || cols <= 0) return {};
     const auto dataRange = finiteRange(data);
-    if (!dataRange) return;
+    if (!dataRange) return {};
     levels = std::max(2, levels);
 
     auto at = [&](int r, int c) -> float {
@@ -1658,8 +1749,7 @@ void PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
     const auto [vmin, vmax] = *dataRange;
     const float range = std::max(vmax - vmin, 1e-12f);
 
-    auto& verts = d->heatmapVertices;
-    verts.clear();
+    std::vector<float> verts;
     verts.reserve(static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols) * 36);
     auto push = [&](float x, float y, const Eigen::Vector4f& col) {
         verts.insert(verts.end(), {x, y, col.x(), col.y(), col.z(), col.w()});
@@ -1683,36 +1773,18 @@ void PlotView::contourfImpl(std::span<const float> data, int rows, int cols,
             push(x0, y0, col); push(x1, y1, col); push(x0, y1, col);
         }
     }
-    d->heatmapVertexCount = static_cast<int>(verts.size() / 6);
-    d->hasHeatmap = true;
-    d->heatmapDirty = true;
-    d->hasColormappedData = true;
-    d->colorbarMap = cmap;
-    d->colorbarVmin = vmin;
-    d->colorbarVmax = vmax;
-
-    d->bounds2d = BoundingBox2D();
-    BoundingBox2D bb;
-    bb.min = Eigen::Vector2f(0.0f, 0.0f);
-    bb.max = Eigen::Vector2f(static_cast<float>(cols), static_cast<float>(rows));
-    d->bounds2d = d->bounds2d.merge(bb);
-
-    if (d->pipelineReady) {
-        auto* r = rhi();
-        int floats = std::max(static_cast<int>(verts.size()), 1);
-        d->heatmapBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
-                                      quint32(floats * sizeof(float)));
-        d->heatmapCapacity = floats;
-    }
-    d->gridDirty = true;
-    update();
+    BoundingBox2D bounds;
+    bounds.min = Eigen::Vector2f(0.0f, 0.0f);
+    bounds.max = Eigen::Vector2f(static_cast<float>(cols),
+                                 static_cast<float>(rows));
+    return addFieldSeries(std::move(verts), true, bounds, {}, cmap, vmin, vmax);
 }
 
-void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
-                           int levels, const PlotStyle& style) {
-    if (rows < 2 || cols < 2) return;
+auto PlotView::contourImpl(std::span<const float> data, int rows, int cols,
+                           int levels, const PlotStyle& style) -> SeriesHandle {
+    if (rows < 2 || cols < 2) return {};
     const auto dataRange = finiteRange(data);
-    if (!dataRange) return;
+    if (!dataRange) return {};
     levels = std::max(1, levels);
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
@@ -1722,14 +1794,13 @@ void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
                     + static_cast<std::size_t>(r)];
     };
     const auto [vmin, vmax] = *dataRange;
-    if (vmax <= vmin) return;
+    if (vmax <= vmin) return {};
 
     // Node position for grid index (r, c) — cell-centred to align with imshow.
     auto nodeX = [&](int c) { return static_cast<float>(c) + 0.5f; };
     auto nodeY = [&](int r) { return static_cast<float>(rows - 1 - r) + 0.5f; };
 
-    auto& verts = d->contourVertices;
-    verts.clear();
+    std::vector<float> verts;
     auto seg = [&](float xa, float ya, float xb, float yb) {
         verts.insert(verts.end(), {xa, ya, xb, yb});
     };
@@ -1784,35 +1855,17 @@ void PlotView::contourImpl(std::span<const float> data, int rows, int cols,
         }
     }
 
-    d->contourVertexCount = static_cast<int>(verts.size() / 2);
-    d->hasContour = true;
-    d->contourDirty = true;
-    d->contourColor = style.color.value_or(
-        d->theme.seriesColors[static_cast<std::size_t>(d->nextColorIndex++)
-                              % d->theme.seriesColors.size()]);
-    if (style.opacity < 1.0f) d->contourColor.w() = style.opacity;
-
-    // Bounds cover the cell grid (so contour-only views still frame nicely).
-    BoundingBox2D bb;
-    bb.min = Eigen::Vector2f(0.0f, 0.0f);
-    bb.max = Eigen::Vector2f(static_cast<float>(cols), static_cast<float>(rows));
-    d->bounds2d = d->bounds2d.merge(bb);
-
-    if (d->pipelineReady) {
-        auto* r = rhi();
-        int floats = std::max(static_cast<int>(verts.size()), 1);
-        d->contourBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
-                                      quint32(floats * sizeof(float)));
-        d->contourCapacity = floats;
-    }
-    d->gridDirty = true;
-    update();
+    BoundingBox2D bounds;
+    bounds.min = Eigen::Vector2f(0.0f, 0.0f);
+    bounds.max = Eigen::Vector2f(static_cast<float>(cols),
+                                 static_cast<float>(rows));
+    return addFieldSeries(std::move(verts), false, bounds, style);
 }
 
-void PlotView::hexbinImpl(std::span<const float> x, std::span<const float> y,
-                          int gridsize, Colormap cmap) {
+auto PlotView::hexbinImpl(std::span<const float> x, std::span<const float> y,
+                          int gridsize, Colormap cmap) -> SeriesHandle {
     const auto indices = finiteSampleIndices(std::min(x.size(), y.size()), x, y);
-    if (indices.empty()) return;
+    if (indices.empty()) return {};
     gridsize = std::max(2, gridsize);
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
@@ -1856,11 +1909,10 @@ void PlotView::hexbinImpl(std::span<const float> x, std::span<const float> y,
         cnt++;
         maxCount = std::max(maxCount, cnt);
     }
-    if (maxCount == 0) return;
+    if (maxCount == 0) return {};
 
     // Emit a coloured hexagon for every non-empty bin.
-    auto& verts = d->heatmapVertices;
-    verts.clear();
+    std::vector<float> verts;
     constexpr float pi = 3.14159265358979323846f;
     for (int r = 0; r <= rows; ++r) {
         for (int c = 0; c <= gridsize; ++c) {
@@ -1886,28 +1938,11 @@ void PlotView::hexbinImpl(std::span<const float> x, std::span<const float> y,
             }
         }
     }
-    d->heatmapVertexCount = static_cast<int>(verts.size() / 6);
-    d->hasHeatmap = true;
-    d->heatmapDirty = true;
-    d->hasColormappedData = true;
-    d->colorbarMap = cmap;
-    d->colorbarVmin = 0.0f;
-    d->colorbarVmax = static_cast<float>(maxCount);
-
-    BoundingBox2D bb;
-    bb.min = Eigen::Vector2f(xlo - dx, ylo - dyRow);
-    bb.max = Eigen::Vector2f(xhi + dx, yhi + dyRow);
-    d->bounds2d = d->bounds2d.merge(bb);
-
-    if (d->pipelineReady) {
-        auto* rr = rhi();
-        int floats = std::max(static_cast<int>(verts.size()), 1);
-        d->heatmapBuffer = makeDynBuf(rr, QRhiBuffer::VertexBuffer,
-                                      quint32(floats * sizeof(float)));
-        d->heatmapCapacity = floats;
-    }
-    d->gridDirty = true;
-    update();
+    BoundingBox2D bounds;
+    bounds.min = Eigen::Vector2f(xlo - dx, ylo - dyRow);
+    bounds.max = Eigen::Vector2f(xhi + dx, yhi + dyRow);
+    return addFieldSeries(std::move(verts), true, bounds, {}, cmap, 0.0f,
+                          static_cast<float>(maxCount));
 }
 
 void PlotView::setPointCloudData(std::span<const float> data,
@@ -2007,6 +2042,12 @@ void PlotView::clear() {
         delete s.srb;
     }
     d->series2d.clear();
+    for (auto& s : d->fieldSeries2d) {
+        delete s.vb;
+        delete s.ub;
+        delete s.srb;
+    }
+    d->fieldSeries2d.clear();
     d->nextColorIndex = 0;
     d->telemetrySeries.reset();
     d->telemetryRing.clear();
@@ -2014,16 +2055,8 @@ void PlotView::clear() {
     d->telemetrySize = 0;
     d->telemetryNextX = 0.0f;
     d->mode3d = RenderMode3D::None;
-    d->hasHeatmap = false;
-    d->heatmapVertices.clear();
-    d->heatmapVertexCount = 0;
-    d->heatmapBuffer.reset();
     d->hasColormappedData = false;
     d->aspectEqual = false;
-    d->hasContour = false;
-    d->contourVertices.clear();
-    d->contourVertexCount = 0;
-    d->contourBuffer.reset();
     d->meshEdgeVertices.clear();
     d->meshEdgeVertexCount = 0;
     d->guide3dVertices.clear();
@@ -2427,10 +2460,16 @@ void PlotView::recomputeBounds() {
         if (!s.visible || boundsVertexCount == 0) continue;
         mergeVertices(boundsVertices, 2);
     }
-    if (d->hasHeatmap)
-        mergeVertices(d->heatmapVertices, 6);
-    if (d->hasContour)
-        mergeVertices(d->contourVertices, 2);
+    for (const auto& s : d->fieldSeries2d) {
+        if (!s.visible || s.vertexCount == 0)
+            continue;
+        if (d->xScale == AxisScale::Linear && d->yScale == AxisScale::Linear) {
+            d->bounds2d = d->bounds2d.merge(s.bounds);
+        } else {
+            mergeVertices(s.vertices,
+                          s.kind == FieldSeriesKind::ColoredTriangles ? 6 : 2);
+        }
+    }
 }
 
 // ── Grid computation ───────────────────────────────────────────────
@@ -3250,13 +3289,9 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->guide3dUniformBuffer = makeUB(r, 80);
     d->gridUniformBuffer    = makeUB(r, 96);
     d->axisUniformBuffer    = makeUB(r, 96);
-    d->heatmapUniformBuffer = makeUB(r, 96);
-    d->contourUniformBuffer = makeUB(r, 96);
 
     // ── SRBs ───────────────────────────────────────────────────────
     d->point3dSrb = makeUniqueSrb(r, d->point3dUniformBuffer.get());
-    d->heatmapSrb = makeUniqueSrb(r, d->heatmapUniformBuffer.get());
-    d->contourSrb = makeUniqueSrb(r, d->contourUniformBuffer.get());
     d->meshSrb    = makeUniqueSrb(r, d->meshUniformBuffer.get());
     d->meshEdgeSrb = makeUniqueSrb(r, d->meshEdgeUniformBuffer.get());
     d->guide3dSrb = makeUniqueSrb(r, d->guide3dUniformBuffer.get());
@@ -3274,19 +3309,14 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
         s.vbCapacity = std::max(floats, 1);
         s.dirty = true;
     }
-    if (d->hasHeatmap && !d->heatmapVertices.empty()) {
-        int floats = static_cast<int>(d->heatmapVertices.size());
-        d->heatmapBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
-                                      quint32(floats * sizeof(float)));
-        d->heatmapCapacity = floats;
-        d->heatmapDirty = true;
-    }
-    if (d->hasContour && !d->contourVertices.empty()) {
-        int floats = static_cast<int>(d->contourVertices.size());
-        d->contourBuffer = makeDynBuf(r, QRhiBuffer::VertexBuffer,
-                                      quint32(floats * sizeof(float)));
-        d->contourCapacity = floats;
-        d->contourDirty = true;
+    for (auto& s : d->fieldSeries2d) {
+        s.ub = makeRawUB(r, 96u);
+        s.srb = makeSrb(r, s.ub);
+        const int floats = std::max(static_cast<int>(s.vertices.size()), 1);
+        s.vb = makeRawDynBuf(r, QRhiBuffer::VertexBuffer,
+                             quint32(floats * sizeof(float)));
+        s.vbCapacity = floats;
+        s.dirty = true;
     }
 
     // ── Load shaders ───────────────────────────────────────────────
@@ -3412,7 +3442,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
         {QRhiShaderStage::Fragment, *fillFs}
     });
     d->heatmapPipeline->setVertexInputLayout(layoutHeatmap);
-    d->heatmapPipeline->setShaderResourceBindings(d->heatmapSrb.get());
+    d->heatmapPipeline->setShaderResourceBindings(d->gridSrb.get());
     d->heatmapPipeline->setRenderPassDescriptor(rpDesc);
     d->heatmapPipeline->setSampleCount(sc);
     d->heatmapPipeline->setTargetBlends({alphaBlend()});
@@ -3728,31 +3758,19 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         }
     }
 
-    // ── Upload heatmap uniform + vertex data ───────────────────────
-    if (is2D && d->hasHeatmap && d->heatmapBuffer) {
-        u->updateDynamicBuffer(d->heatmapUniformBuffer.get(), 0, 64, mvp.data());
-        u->updateDynamicBuffer(d->heatmapUniformBuffer.get(), 80, 16,
-                               dataAxisParams.data());
-        if (d->heatmapDirty && !d->heatmapVertices.empty()) {
-            u->updateDynamicBuffer(d->heatmapBuffer.get(), 0,
-                                   quint32(d->heatmapVertices.size() * sizeof(float)),
-                                   d->heatmapVertices.data());
-            d->heatmapDirty = false;
-        }
-    }
-
-    // ── Upload contour uniform + vertex data ───────────────────────
-    if (is2D && d->hasContour && d->contourBuffer) {
-        u->updateDynamicBuffer(d->contourUniformBuffer.get(), 0, 64, mvp.data());
-        u->updateDynamicBuffer(d->contourUniformBuffer.get(), 64, 16,
-                               d->contourColor.data());
-        u->updateDynamicBuffer(d->contourUniformBuffer.get(), 80, 16,
-                       dataAxisParams.data());
-        if (d->contourDirty && !d->contourVertices.empty()) {
-            u->updateDynamicBuffer(d->contourBuffer.get(), 0,
-                                   quint32(d->contourVertices.size() * sizeof(float)),
-                                   d->contourVertices.data());
-            d->contourDirty = false;
+    // ── Upload field uniforms + vertex data ────────────────────────
+    for (auto& s : d->fieldSeries2d) {
+        if (!is2D || !s.vb)
+            continue;
+        u->updateDynamicBuffer(s.ub, 0, 64, mvp.data());
+        if (s.kind == FieldSeriesKind::ContourLines)
+            u->updateDynamicBuffer(s.ub, 64, 16, s.color.data());
+        u->updateDynamicBuffer(s.ub, 80, 16, dataAxisParams.data());
+        if (s.dirty && !s.vertices.empty()) {
+            u->updateDynamicBuffer(s.vb, 0,
+                                   quint32(s.vertices.size() * sizeof(float)),
+                                   s.vertices.data());
+            s.dirty = false;
         }
     }
 
@@ -3825,22 +3843,17 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         cb->draw(d->guide3dVertexCount);
     }
 
-    // ── Draw heatmap (2D, under grid/axes) ─────────────────────────
-    if (is2D && d->hasHeatmap && d->heatmapBuffer && d->heatmapVertexCount > 0) {
-        cb->setGraphicsPipeline(d->heatmapPipeline.get());
-        cb->setShaderResources(d->heatmapSrb.get());
-        const QRhiCommandBuffer::VertexInput hmBuf(d->heatmapBuffer.get(), 0);
-        cb->setVertexInput(0, 1, &hmBuf);
-        cb->draw(d->heatmapVertexCount);
-    }
-
-    // ── Draw contour lines (2D, over any filled heatmap) ───────────
-    if (is2D && d->hasContour && d->contourBuffer && d->contourVertexCount > 0) {
-        cb->setGraphicsPipeline(d->gridPipeline.get());
-        cb->setShaderResources(d->contourSrb.get());
-        const QRhiCommandBuffer::VertexInput cbuf(d->contourBuffer.get(), 0);
-        cb->setVertexInput(0, 1, &cbuf);
-        cb->draw(d->contourVertexCount);
+    // ── Draw fields (2D, under grid/axes) ──────────────────────────
+    for (const auto& s : d->fieldSeries2d) {
+        if (!is2D || !s.visible || !s.vb || s.vertexCount <= 0)
+            continue;
+        cb->setGraphicsPipeline(s.kind == FieldSeriesKind::ColoredTriangles
+                                    ? d->heatmapPipeline.get()
+                                    : d->gridPipeline.get());
+        cb->setShaderResources(s.srb);
+        const QRhiCommandBuffer::VertexInput fieldBuf(s.vb, 0);
+        cb->setVertexInput(0, 1, &fieldBuf);
+        cb->draw(s.vertexCount);
     }
 
     // ── Draw grid (2D only) ────────────────────────────────────────

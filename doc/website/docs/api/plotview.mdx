@@ -86,10 +86,13 @@ public:
 `PlotView` is the central class of SkigenPlot. It accepts Eigen matrix expressions directly — no manual data conversion needed. Data is interleaved into GPU vertex buffers and rendered using Qt's RHI abstraction layer.
 
 Line, scatter, histogram, bar, horizontal-bar, filled-area, step, error-bar,
-stem, box, violin, quiver, and pie creation returns an opaque `SeriesHandle`.
+stem, box, violin, quiver, pie, heatmap, contour, filled-contour, and hexbin
+creation returns an opaque `SeriesHandle`.
 Handles remain stable when other series are removed. Mutating or removing an
 invalid, stale, or foreign handle returns `false` and leaves the view unchanged.
 Creation with insufficient input returns an invalid handle.
+Field geometry is immutable in v1, so `updateSeriesData()` returns `false` for
+field handles; style, visibility, containment, and removal are supported.
 
 X and y axes independently support `AxisScale::Linear` and
 `AxisScale::Log10`. Public limits remain in data units and may be reversed.
