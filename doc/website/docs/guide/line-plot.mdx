@@ -11,8 +11,9 @@ Render a 2D line plot from two Eigen vectors — the most common plot type for t
 
 ```cpp
 template <typename DerivedX, typename DerivedY>
-void PlotView::plot(const Eigen::MatrixBase<DerivedX>& x,
-                    const Eigen::MatrixBase<DerivedY>& y);
+SeriesHandle PlotView::plot(const Eigen::MatrixBase<DerivedX>& x,
+                            const Eigen::MatrixBase<DerivedY>& y,
+                            const PlotStyle& style = {});
 ```
 
 Accepts any Eigen expression (vectors, blocks, array expressions). Data is cast to `float` and interleaved into a GPU vertex buffer. Bounding box is computed automatically.
@@ -21,8 +22,11 @@ Accepts any Eigen expression (vectors, blocks, array expressions). Data is cast 
 
 | Method | Description |
 |--------|-------------|
-| `plot(x, y)` | Set line data from two equal-length vectors |
-| `setLineColor(rgba)` | Set line colour as `Eigen::Vector4f` (RGBA, 0–1) |
+| `plot(x, y, style)` | Add line data and return its stable handle |
+| `updateSeriesData(handle, x, y)` | Replace line or scatter data in place |
+| `setSeriesStyle(handle, style)` | Replace a series colour, point style, and label |
+| `setSeriesVisible(handle, visible)` | Show or hide one series |
+| `removeSeries(handle)` | Remove one series and invalidate its handle |
 | `setBackgroundColor(rgba)` | Set viewport background colour |
 
 ## Example
@@ -42,8 +46,11 @@ int main(int argc, char* argv[]) {
     Eigen::VectorXf y = x.array().sin();
 
     Skigen::Plot::PlotView view;
-    view.plot(x, y);
-    view.setLineColor({0.2f, 0.8f, 0.4f, 1.0f});
+    auto series = view.plot(
+        x, y, {.color = Eigen::Vector4f{0.2f, 0.8f, 0.4f, 1.0f}});
+
+    Eigen::VectorXf updatedY = x.array().cos();
+    view.updateSeriesData(series, x, updatedY);
     view.resize(800, 500);
     view.show();
 

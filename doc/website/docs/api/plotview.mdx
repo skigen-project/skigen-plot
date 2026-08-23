@@ -18,27 +18,35 @@ public:
 
     // 2D line plot
     template <typename DerivedX, typename DerivedY>
-    void plot(const Eigen::MatrixBase<DerivedX>& x,
-              const Eigen::MatrixBase<DerivedY>& y);
+    SeriesHandle plot(const Eigen::MatrixBase<DerivedX>& x,
+                      const Eigen::MatrixBase<DerivedY>& y,
+                      const PlotStyle& style = {});
 
     // 2D scatter plot
     template <typename DerivedX, typename DerivedY>
-    void scatter(const Eigen::MatrixBase<DerivedX>& x,
-                 const Eigen::MatrixBase<DerivedY>& y);
+    SeriesHandle scatter(const Eigen::MatrixBase<DerivedX>& x,
+                         const Eigen::MatrixBase<DerivedY>& y,
+                         const PlotStyle& style = {});
+
+    // Line and scatter lifecycle
+    bool updateSeriesData(SeriesHandle handle, const auto& x, const auto& y);
+    bool setSeriesStyle(SeriesHandle handle, const PlotStyle& style);
+    bool setSeriesVisible(SeriesHandle handle, bool visible);
+    bool containsSeries(SeriesHandle handle) const;
+    bool removeSeries(SeriesHandle handle);
 
     // 3D point cloud
     template <typename Derived>
     void pointCloud(const Eigen::MatrixBase<Derived>& vertices);
 
     // Appearance
-    void setLineColor(const Eigen::Vector4f& rgba);
     void setBackgroundColor(const Eigen::Vector4f& rgba);
 
     // 3D camera
     void setCamera(const Camera3D& camera);
 
     // Export
-    void saveImage(const QString& path);
+    bool savePng(const QString& path, int width, int height);
 };
 
 } // namespace Skigen::Plot
@@ -47,5 +55,9 @@ public:
 ## Description
 
 `PlotView` is the central class of SkigenPlot. It accepts Eigen matrix expressions directly — no manual data conversion needed. Data is interleaved into GPU vertex buffers and rendered using Qt's RHI abstraction layer.
+
+Line and scatter creation returns an opaque `SeriesHandle`. Handles remain
+stable when other series are removed. Mutating or removing an invalid, stale,
+or foreign handle returns `false` and leaves the view unchanged.
 
 See the [Line Plot](../guide/line-plot) and [Scatter Plot](../guide/scatter-plot) guides for usage examples.

@@ -12,6 +12,8 @@ All notable changes to SkigenPlot will be documented in this file.
   field, point-cloud, and mesh plots.
 - Fixed-capacity scrolling telemetry with automatic and explicit sample
   coordinates.
+- Stable line and scatter handles with in-place data/style updates, visibility
+  control, and independent removal.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

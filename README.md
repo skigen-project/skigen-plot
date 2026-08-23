@@ -30,14 +30,19 @@ int main(int argc, char* argv[]) {
     Eigen::VectorXf y = x.array().sin();
 
     Skigen::Plot::PlotView view;
-    view.plot(x, y);
-    view.setLineColor({0.2f, 0.8f, 0.4f, 1.0f});
+    auto series = view.plot(
+      x, y, {.color = Eigen::Vector4f{0.2f, 0.8f, 0.4f, 1.0f}});
+    view.setSeriesVisible(series, true);
     view.resize(800, 500);
     view.show();
 
     return app.exec();
 }
 ```
+
+`plot()` and `scatter()` return stable `SeriesHandle` values. Use
+`updateSeriesData()`, `setSeriesStyle()`, `setSeriesVisible()`, and
+`removeSeries()` to modify one series without clearing the rest of the view.
 
 ## Plot Types
 
