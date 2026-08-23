@@ -74,6 +74,9 @@ pie chart, share one handle for styling, visibility, and removal.
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,
 `resetYLimits()`, or `resetAxisLimits()` restore automatic limits.
+Automatic limits add a restrained 5% margin around ordinary series. Heatmaps,
+contours, and other field plots use sticky edges, so their rendered rectangle
+meets the axis extent without empty tails.
 Use `setXScale(AxisScale::Log10)` and `setYScale(AxisScale::Log10)` independently
 for base-10 logarithmic axes. Limits remain expressed in data units; logarithmic
 limits must be positive, and non-positive samples are omitted on logarithmic axes.

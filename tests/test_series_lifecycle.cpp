@@ -44,6 +44,14 @@ int main(int argc, char* argv[])
     const auto points = view.scatter(x, y, {.label = "points"});
     if (!line || !points || line == points)
         return 1;
+    const auto [autoXMin, autoXMax] = view.xLimits();
+    const auto [autoYMin, autoYMax] = view.yLimits();
+    if (std::abs(autoXMin + 0.1f) > 1e-5f
+        || std::abs(autoXMax - 2.1f) > 1e-5f
+        || std::abs(autoYMin - 0.9f) > 1e-5f
+        || std::abs(autoYMax - 3.1f) > 1e-5f) {
+        return 56;
+    }
     if (!view.containsSeries(line) || !view.containsSeries(points))
         return 2;
     constexpr std::array lineStyles{
@@ -104,6 +112,14 @@ int main(int argc, char* argv[])
     if (view.xScale() != Skigen::Plot::AxisScale::Linear
         || view.yScale() != Skigen::Plot::AxisScale::Linear) {
         return 54;
+    }
+
+    Skigen::Plot::PlotView fieldView;
+    Eigen::MatrixXf autoscaleField = Eigen::MatrixXf::Ones(3, 4);
+    if (!fieldView.imshow(autoscaleField)
+        || fieldView.xLimits() != std::pair{0.0f, 4.0f}
+        || fieldView.yLimits() != std::pair{0.0f, 3.0f}) {
+        return 57;
     }
 
     view.resize(640, 480);

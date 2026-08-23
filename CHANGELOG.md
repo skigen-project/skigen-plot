@@ -26,6 +26,8 @@ All notable changes to SkigenPlot will be documented in this file.
   placement.
 - Independent x/y axis limits with getters, autoscale reset, validation, and
   intentional axis inversion through reversed endpoints.
+- Data-relative autoscaling with restrained padding for ordinary series and
+  exact sticky edges for fields, keeping axes aligned with rendered content.
 - Independent linear and base-10 logarithmic x/y scales with decade ticks,
   mixed-scale rendering, transformed pan/zoom, and positive-domain validation.
 - Circle, square, triangle, plus, and cross scatter markers, including hollow
@@ -33,7 +35,8 @@ All notable changes to SkigenPlot will be documented in this file.
 - Portable screen-space triangle markers for 2D scatter and depth-tested 3D
   point clouds, preserving requested pixel sizes on Direct3D, Vulkan, and Metal.
 - Refined gallery composition with high-contrast scatter clusters, legends,
-  clearer 3D framing, and a shaded damped-wave surface mesh.
+  publication-style spines, clearer 3D framing, and a shaded damped-wave
+  surface mesh.
 - Deterministic finite-data filtering for line, scatter, series updates, and
   histograms; creation fails predictably when no usable values remain.
 - Public `computeHistogram()` data-layer results with reference tests for

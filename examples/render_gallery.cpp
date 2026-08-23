@@ -449,8 +449,8 @@ auto meshStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
             }
 
             Skigen::Plot::Camera3D camera;
-            camera.lookAt({6.8f, 5.1f, 7.4f}, {0.f, -0.15f, 0.f});
-            camera.setPerspective(38.f, 4.f / 3.f, 0.1f, 50.f);
+            camera.lookAt({9.2f, 7.0f, 10.0f}, {0.f, -0.10f, 0.f});
+            camera.setPerspective(37.f, 4.f / 3.f, 0.1f, 50.f);
 
             view.clear();
             view.setTheme(theme);
@@ -540,11 +540,7 @@ int main(int argc, char* argv[]) {
         view.setXScale(Skigen::Plot::AxisScale::Linear);
         view.setYScale(Skigen::Plot::AxisScale::Linear);
         view.setColorbarVisible(false);  // default; colormapped steps enable it
-        // The clean paper/matplotlib look uses plain spines (no arrowheads).
-        // Set before setup() so a step can still override (e.g. image plots).
-        const bool plainSpines = step.filename.contains(QStringLiteral("_mpl"))
-                                 || step.filename.contains(QStringLiteral("_paper"));
-        view.setAxisArrowsVisible(!plainSpines);
+        view.setAxisArrowsVisible(false);
         step.setup(view);
         view.update();
 

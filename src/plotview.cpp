@@ -134,6 +134,27 @@ auto transformBounds(const BoundingBox2D& bounds,
             transformPoint(bounds.max.x(), bounds.max.y(), xScale, yScale)};
 }
 
+auto autoAxisLimits(float lo, float hi, AxisScale scale, bool sticky)
+    -> std::pair<float, float> {
+    if (!validAxisValue(lo, scale) || !validAxisValue(hi, scale))
+        return scale == AxisScale::Log10
+            ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
+
+    float transformedLo = axisTransform(std::min(lo, hi), scale);
+    float transformedHi = axisTransform(std::max(lo, hi), scale);
+    if (transformedHi - transformedLo < 1e-6f) {
+        const float pad = std::max(0.5f, std::abs(transformedLo) * 0.05f);
+        transformedLo -= pad;
+        transformedHi += pad;
+    } else if (!sticky) {
+        const float pad = (transformedHi - transformedLo) * 0.05f;
+        transformedLo -= pad;
+        transformedHi += pad;
+    }
+    return {axisInverseTransform(transformedLo, scale),
+            axisInverseTransform(transformedHi, scale)};
+}
+
 auto transformLineSource(std::span<const float> source,
                          AxisScale xScale, AxisScale yScale)
     -> std::vector<float> {
@@ -2185,12 +2206,10 @@ auto PlotView::xLimits() const -> std::pair<float, float> {
         return d->xScale == AxisScale::Log10
             ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
     }
-    const auto ticks = axisTicks(d->bounds2d.min.x(), d->bounds2d.max.x(),
-                                 d->xScale).ticks;
-    const auto fallback = d->xScale == AxisScale::Log10
-        ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
-    return ticks.empty() ? fallback
-                         : std::pair{ticks.front(), ticks.back()};
+    const bool sticky = std::ranges::any_of(
+        d->fieldSeries2d, [](const auto& series) { return series.visible; });
+    return autoAxisLimits(d->bounds2d.min.x(), d->bounds2d.max.x(),
+                          d->xScale, sticky);
 }
 
 auto PlotView::yLimits() const -> std::pair<float, float> {
@@ -2202,12 +2221,10 @@ auto PlotView::yLimits() const -> std::pair<float, float> {
         return d->yScale == AxisScale::Log10
             ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
     }
-    const auto ticks = axisTicks(d->bounds2d.min.y(), d->bounds2d.max.y(),
-                                 d->yScale).ticks;
-    const auto fallback = d->yScale == AxisScale::Log10
-        ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
-    return ticks.empty() ? fallback
-                         : std::pair{ticks.front(), ticks.back()};
+    const bool sticky = std::ranges::any_of(
+        d->fieldSeries2d, [](const auto& series) { return series.visible; });
+    return autoAxisLimits(d->bounds2d.min.y(), d->bounds2d.max.y(),
+                          d->yScale, sticky);
 }
 
 void PlotView::resetXLimits() {
@@ -2505,6 +2522,21 @@ void PlotView::computeGridVertices() {
         sourceBounds.min.y() = d->yScale == AxisScale::Log10 ? 1.0f : 0.0f;
         sourceBounds.max.y() = d->yScale == AxisScale::Log10 ? 10.0f : 1.0f;
     }
+    const bool sticky = std::ranges::any_of(
+        d->fieldSeries2d, [](const auto& series) { return series.visible; });
+    if (!d->userXLimits) {
+        const auto limits = autoAxisLimits(sourceBounds.min.x(), sourceBounds.max.x(),
+                                           d->xScale, sticky);
+        sourceBounds.min.x() = limits.first;
+        sourceBounds.max.x() = limits.second;
+    }
+    if (!d->userYLimits) {
+        const auto limits = autoAxisLimits(sourceBounds.min.y(), sourceBounds.max.y(),
+                                           d->yScale, sticky);
+        sourceBounds.min.y() = limits.first;
+        sourceBounds.max.y() = limits.second;
+    }
+
     const float xTickMin = std::min(sourceBounds.min.x(), sourceBounds.max.x());
     const float xTickMax = std::max(sourceBounds.min.x(), sourceBounds.max.x());
     const float yTickMin = std::min(sourceBounds.min.y(), sourceBounds.max.y());
@@ -2514,20 +2546,7 @@ void PlotView::computeGridVertices() {
 
     if (xTicks.ticks.empty() || yTicks.ticks.empty()) return;
 
-    if (d->userXLimits) {
-        d->viewBounds.min.x() = sourceBounds.min.x();
-        d->viewBounds.max.x() = sourceBounds.max.x();
-    } else {
-        d->viewBounds.min.x() = xTicks.ticks.front();
-        d->viewBounds.max.x() = xTicks.ticks.back();
-    }
-    if (d->userYLimits) {
-        d->viewBounds.min.y() = sourceBounds.min.y();
-        d->viewBounds.max.y() = sourceBounds.max.y();
-    } else {
-        d->viewBounds.min.y() = yTicks.ticks.front();
-        d->viewBounds.max.y() = yTicks.ticks.back();
-    }
+    d->viewBounds = sourceBounds;
 
     const auto transformedView = transformBounds(d->viewBounds,
                                                   d->xScale, d->yScale);
@@ -2548,8 +2567,10 @@ void PlotView::computeGridVertices() {
         return result;
     };
 
-    d->xTickValues = d->userXLimits ? visibleTicks(xTicks.ticks, xlo, xhi) : xTicks.ticks;
-    d->yTickValues = d->userYLimits ? visibleTicks(yTicks.ticks, ylo, yhi) : yTicks.ticks;
+    d->xTickValues = visibleTicks(xTicks.ticks, sourceBounds.min.x(),
+                                  sourceBounds.max.x());
+    d->yTickValues = visibleTicks(yTicks.ticks, sourceBounds.min.y(),
+                                  sourceBounds.max.y());
 
     for (float xt : d->xTickValues) {
         const float transformedTick = axisTransform(xt, d->xScale);
@@ -2670,7 +2691,7 @@ static auto plotAreaFor(const QSize& size,
                         bool hasColorbar = false) -> QRectF
 {
     double left = hasYAxisLabel ? 68.0 : 46.0;
-    double top = hasTitle ? (hasCaption ? 58.0 : 38.0) : (hasCaption ? 38.0 : 18.0);
+    double top = hasTitle ? (hasCaption ? 66.0 : 42.0) : (hasCaption ? 42.0 : 18.0);
     double right = hasColorbar ? 80.0 : 24.0;
     double bottom = hasXAxisLabel ? 50.0 : 34.0;
     return QRectF(left,
@@ -2685,7 +2706,7 @@ static auto dataToPixel(const BoundingBox2D& bounds,
                         AxisScale xScale,
                         AxisScale yScale) -> QPointF
 {
-    auto b = transformBounds(bounds, xScale, yScale).expanded(0.02f);
+    auto b = transformBounds(bounds, xScale, yScale);
     const auto transformed = transformPoint(point.x(), point.y(), xScale, yScale);
     float x = (transformed.x() - b.min.x()) / b.width();
     float y = (transformed.y() - b.min.y()) / b.height();
@@ -2767,8 +2788,6 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
         double xTickY = plotArea.bottom() + 4.0;
 
         for (std::size_t i = 0; i < d->xTickValues.size(); ++i) {
-            if (i == 0 || i + 1 == d->xTickValues.size())
-                continue;
             float xt = d->xTickValues[i];
             QPointF pos = dataToPixel(d->viewBounds, plotArea,
                                       Eigen::Vector2f(xt, d->viewBounds.min.y()),
@@ -2780,8 +2799,6 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
 
         double yTickX = plotArea.left() - 42.0;
         for (std::size_t i = 0; i < d->yTickValues.size(); ++i) {
-            if (i == 0 || i + 1 == d->yTickValues.size())
-                continue;
             float yt = d->yTickValues[i];
             QPointF pos = dataToPixel(d->viewBounds, plotArea,
                                       Eigen::Vector2f(d->viewBounds.min.x(), yt),
@@ -3616,7 +3633,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                 }
             }
         }
-        mvp = orthoProjection(projBounds, 0.02f);
+        mvp = orthoProjection(projBounds, 0.0f);
     } else {
         mvp = d->camera.viewProjectionMatrix();
     }
