@@ -102,6 +102,51 @@ auto finiteRange(std::span<const float> values)
     return range;
 }
 
+auto axisTicks(float lo, float hi, AxisScale scale, int maxTicks = 10)
+    -> TickResult {
+    if (scale == AxisScale::Linear)
+        return computeTicks(lo, hi, maxTicks);
+    TickResult result = computeLogTicks(lo, hi, maxTicks);
+    for (float& tick : result.ticks)
+        tick = axisInverseTransform(tick, AxisScale::Log10);
+    return result;
+}
+
+auto validAxisValue(float value, AxisScale scale) -> bool {
+    return std::isfinite(value)
+        && (scale == AxisScale::Linear || value > 0.0f);
+}
+
+auto transformPoint(float x, float y, AxisScale xScale, AxisScale yScale)
+    -> Eigen::Vector2f {
+    return {axisTransform(x, xScale), axisTransform(y, yScale)};
+}
+
+auto inverseTransformPoint(float x, float y,
+                           AxisScale xScale, AxisScale yScale)
+    -> Eigen::Vector2f {
+    return {axisInverseTransform(x, xScale), axisInverseTransform(y, yScale)};
+}
+
+auto transformBounds(const BoundingBox2D& bounds,
+                     AxisScale xScale, AxisScale yScale) -> BoundingBox2D {
+    return {transformPoint(bounds.min.x(), bounds.min.y(), xScale, yScale),
+            transformPoint(bounds.max.x(), bounds.max.y(), xScale, yScale)};
+}
+
+auto transformLineSource(std::span<const float> source,
+                         AxisScale xScale, AxisScale yScale)
+    -> std::vector<float> {
+    std::vector<float> transformed;
+    transformed.reserve(source.size());
+    for (std::size_t i = 0; i + 1 < source.size(); i += 2) {
+        const auto point = transformPoint(source[i], source[i + 1], xScale, yScale);
+        transformed.push_back(point.x());
+        transformed.push_back(point.y());
+    }
+    return transformed;
+}
+
 // ── Per-series GPU state ───────────────────────────────────────────
 
 struct Series2D {
@@ -255,6 +300,8 @@ struct PlotView::Impl {
     BoundingBox2D viewBounds;
     bool userXLimits = false;
     bool userYLimits = false;
+    AxisScale xScale = AxisScale::Linear;
+    AxisScale yScale = AxisScale::Linear;
     BoundingBox3D bounds3d;
     Camera3D camera;
     Camera3D homeCamera;
@@ -666,7 +713,7 @@ auto PlotView::addSeriesImpl(int kindInt,
 
     if (d->pipelineReady) {
         auto* r = rhi();
-        quint32 ubSize = (kind == SeriesKind::Scatter) ? 96u : 80u;
+        quint32 ubSize = (kind == SeriesKind::Scatter) ? 112u : 96u;
         series.ub = makeRawUB(r, ubSize);
         series.srb = makeSrb(r, series.ub);
         int floats = std::max(static_cast<int>(series.vertices.size()), 1);
@@ -933,7 +980,7 @@ auto PlotView::addFillSeries(std::span<const float> triangleVertices,
 
     if (d->pipelineReady) {
         auto* r = rhi();
-        series.ub = makeRawUB(r, 80u);
+        series.ub = makeRawUB(r, 96u);
         series.srb = makeSrb(r, series.ub);
         int floats = std::max(static_cast<int>(series.vertices.size()), 1);
         series.vb = makeRawDynBuf(r, QRhiBuffer::VertexBuffer,
@@ -2065,7 +2112,8 @@ void PlotView::setAxisArrowsVisible(bool visible) {
 }
 
 auto PlotView::setXLimits(float left, float right) -> bool {
-    if (!std::isfinite(left) || !std::isfinite(right) || left == right)
+    if (!std::isfinite(left) || !std::isfinite(right) || left == right
+        || (d->xScale == AxisScale::Log10 && (left <= 0.0f || right <= 0.0f)))
         return false;
     d->viewBounds.min.x() = left;
     d->viewBounds.max.x() = right;
@@ -2077,7 +2125,8 @@ auto PlotView::setXLimits(float left, float right) -> bool {
 }
 
 auto PlotView::setYLimits(float bottom, float top) -> bool {
-    if (!std::isfinite(bottom) || !std::isfinite(top) || bottom == top)
+    if (!std::isfinite(bottom) || !std::isfinite(top) || bottom == top
+        || (d->yScale == AxisScale::Log10 && (bottom <= 0.0f || top <= 0.0f)))
         return false;
     d->viewBounds.min.y() = bottom;
     d->viewBounds.max.y() = top;
@@ -2094,10 +2143,14 @@ auto PlotView::xLimits() const -> std::pair<float, float> {
     if (!std::isfinite(d->bounds2d.min.x())
         || !std::isfinite(d->bounds2d.max.x())
         || d->bounds2d.min.x() > d->bounds2d.max.x()) {
-        return {0.0f, 1.0f};
+        return d->xScale == AxisScale::Log10
+            ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
     }
-    const auto ticks = computeTicks(d->bounds2d.min.x(), d->bounds2d.max.x()).ticks;
-    return ticks.empty() ? std::pair{0.0f, 1.0f}
+    const auto ticks = axisTicks(d->bounds2d.min.x(), d->bounds2d.max.x(),
+                                 d->xScale).ticks;
+    const auto fallback = d->xScale == AxisScale::Log10
+        ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
+    return ticks.empty() ? fallback
                          : std::pair{ticks.front(), ticks.back()};
 }
 
@@ -2107,10 +2160,14 @@ auto PlotView::yLimits() const -> std::pair<float, float> {
     if (!std::isfinite(d->bounds2d.min.y())
         || !std::isfinite(d->bounds2d.max.y())
         || d->bounds2d.min.y() > d->bounds2d.max.y()) {
-        return {0.0f, 1.0f};
+        return d->yScale == AxisScale::Log10
+            ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
     }
-    const auto ticks = computeTicks(d->bounds2d.min.y(), d->bounds2d.max.y()).ticks;
-    return ticks.empty() ? std::pair{0.0f, 1.0f}
+    const auto ticks = axisTicks(d->bounds2d.min.y(), d->bounds2d.max.y(),
+                                 d->yScale).ticks;
+    const auto fallback = d->yScale == AxisScale::Log10
+        ? std::pair{1.0f, 10.0f} : std::pair{0.0f, 1.0f};
+    return ticks.empty() ? fallback
                          : std::pair{ticks.front(), ticks.back()};
 }
 
@@ -2134,6 +2191,46 @@ void PlotView::resetAxisLimits() {
     d->gridDirty = true;
     if (d->textOverlay) d->textOverlay->update();
     update();
+}
+
+void PlotView::setXScale(AxisScale scale) {
+    if (d->xScale == scale)
+        return;
+    d->xScale = scale;
+    if (scale == AxisScale::Log10 && d->userXLimits
+        && (d->viewBounds.min.x() <= 0.0f || d->viewBounds.max.x() <= 0.0f)) {
+        d->userXLimits = false;
+    }
+    recomputeBounds();
+    d->gridDirty = true;
+    for (auto& series : d->series2d)
+        series.strokeDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
+    update();
+}
+
+void PlotView::setYScale(AxisScale scale) {
+    if (d->yScale == scale)
+        return;
+    d->yScale = scale;
+    if (scale == AxisScale::Log10 && d->userYLimits
+        && (d->viewBounds.min.y() <= 0.0f || d->viewBounds.max.y() <= 0.0f)) {
+        d->userYLimits = false;
+    }
+    recomputeBounds();
+    d->gridDirty = true;
+    for (auto& series : d->series2d)
+        series.strokeDirty = true;
+    if (d->textOverlay) d->textOverlay->update();
+    update();
+}
+
+auto PlotView::xScale() const -> AxisScale {
+    return d->xScale;
+}
+
+auto PlotView::yScale() const -> AxisScale {
+    return d->yScale;
 }
 
 void PlotView::setLegendVisible(bool visible) {
@@ -2257,11 +2354,16 @@ void PlotView::zoomCamera(float factor) {
         }
 
         factor = std::clamp(factor, 0.1f, 10.0f);
-        Eigen::Vector2f center = d->viewBounds.center();
-        Eigen::Vector2f halfSize(d->viewBounds.width() * factor * 0.5f,
-                                 d->viewBounds.height() * factor * 0.5f);
-        d->viewBounds.min = center - halfSize;
-        d->viewBounds.max = center + halfSize;
+        auto transformed = transformBounds(d->viewBounds, d->xScale, d->yScale);
+        Eigen::Vector2f center = transformed.center();
+        Eigen::Vector2f halfSize(transformed.width() * factor * 0.5f,
+                                 transformed.height() * factor * 0.5f);
+        transformed.min = center - halfSize;
+        transformed.max = center + halfSize;
+        d->viewBounds.min = inverseTransformPoint(
+            transformed.min.x(), transformed.min.y(), d->xScale, d->yScale);
+        d->viewBounds.max = inverseTransformPoint(
+            transformed.max.x(), transformed.max.y(), d->xScale, d->yScale);
         d->gridDirty = true;
         update();
         return;
@@ -2297,25 +2399,38 @@ auto PlotView::is2DView() const -> bool {
 
 void PlotView::recomputeBounds() {
     d->bounds2d = BoundingBox2D();
+    auto mergeVertices = [&](const std::vector<float>& vertices,
+                             std::size_t stride) {
+        BoundingBox2D bounds;
+        bool found = false;
+        for (std::size_t i = 0; i + 1 < vertices.size(); i += stride) {
+            const float x = vertices[i];
+            const float y = vertices[i + 1];
+            if (!validAxisValue(x, d->xScale)
+                || !validAxisValue(y, d->yScale)) {
+                continue;
+            }
+            bounds.min.x() = std::min(bounds.min.x(), x);
+            bounds.max.x() = std::max(bounds.max.x(), x);
+            bounds.min.y() = std::min(bounds.min.y(), y);
+            bounds.max.y() = std::max(bounds.max.y(), y);
+            found = true;
+        }
+        if (found)
+            d->bounds2d = d->bounds2d.merge(bounds);
+    };
     for (const auto& s : d->series2d) {
         const auto& boundsVertices = s.kind == SeriesKind::Line
             ? s.sourceVertices : s.vertices;
         const int boundsVertexCount = s.kind == SeriesKind::Line
             ? s.sourceVertexCount : s.vertexCount;
         if (!s.visible || boundsVertexCount == 0) continue;
-        BoundingBox2D sb;
-        for (std::size_t i = 0; i + 1 < boundsVertices.size(); i += 2) {
-            float x = boundsVertices[i];
-            float y = boundsVertices[i + 1];
-            if (!std::isfinite(x) || !std::isfinite(y))
-                continue;
-            if (x < sb.min.x()) sb.min.x() = x;
-            if (x > sb.max.x()) sb.max.x() = x;
-            if (y < sb.min.y()) sb.min.y() = y;
-            if (y > sb.max.y()) sb.max.y() = y;
-        }
-        d->bounds2d = d->bounds2d.merge(sb);
+        mergeVertices(boundsVertices, 2);
     }
+    if (d->hasHeatmap)
+        mergeVertices(d->heatmapVertices, 6);
+    if (d->hasContour)
+        mergeVertices(d->contourVertices, 2);
 }
 
 // ── Grid computation ───────────────────────────────────────────────
@@ -2335,12 +2450,22 @@ void PlotView::computeGridVertices() {
         sourceBounds.min.y() = d->viewBounds.min.y();
         sourceBounds.max.y() = d->viewBounds.max.y();
     }
+    if (!validAxisValue(sourceBounds.min.x(), d->xScale)
+        || !validAxisValue(sourceBounds.max.x(), d->xScale)) {
+        sourceBounds.min.x() = d->xScale == AxisScale::Log10 ? 1.0f : 0.0f;
+        sourceBounds.max.x() = d->xScale == AxisScale::Log10 ? 10.0f : 1.0f;
+    }
+    if (!validAxisValue(sourceBounds.min.y(), d->yScale)
+        || !validAxisValue(sourceBounds.max.y(), d->yScale)) {
+        sourceBounds.min.y() = d->yScale == AxisScale::Log10 ? 1.0f : 0.0f;
+        sourceBounds.max.y() = d->yScale == AxisScale::Log10 ? 10.0f : 1.0f;
+    }
     const float xTickMin = std::min(sourceBounds.min.x(), sourceBounds.max.x());
     const float xTickMax = std::max(sourceBounds.min.x(), sourceBounds.max.x());
     const float yTickMin = std::min(sourceBounds.min.y(), sourceBounds.max.y());
     const float yTickMax = std::max(sourceBounds.min.y(), sourceBounds.max.y());
-    auto xTicks = computeTicks(xTickMin, xTickMax);
-    auto yTicks = computeTicks(yTickMin, yTickMax);
+    auto xTicks = axisTicks(xTickMin, xTickMax, d->xScale);
+    auto yTicks = axisTicks(yTickMin, yTickMax, d->yScale);
 
     if (xTicks.ticks.empty() || yTicks.ticks.empty()) return;
 
@@ -2359,10 +2484,12 @@ void PlotView::computeGridVertices() {
         d->viewBounds.max.y() = yTicks.ticks.back();
     }
 
-    float ylo = d->viewBounds.min.y();
-    float yhi = d->viewBounds.max.y();
-    float xlo = d->viewBounds.min.x();
-    float xhi = d->viewBounds.max.x();
+    const auto transformedView = transformBounds(d->viewBounds,
+                                                  d->xScale, d->yScale);
+    float ylo = transformedView.min.y();
+    float yhi = transformedView.max.y();
+    float xlo = transformedView.min.x();
+    float xhi = transformedView.max.x();
 
     auto visibleTicks = [](const std::vector<float>& ticks, float lo, float hi) {
         std::vector<float> result;
@@ -2380,12 +2507,14 @@ void PlotView::computeGridVertices() {
     d->yTickValues = d->userYLimits ? visibleTicks(yTicks.ticks, ylo, yhi) : yTicks.ticks;
 
     for (float xt : d->xTickValues) {
-        d->gridVertices.push_back(xt); d->gridVertices.push_back(ylo);
-        d->gridVertices.push_back(xt); d->gridVertices.push_back(yhi);
+        const float transformedTick = axisTransform(xt, d->xScale);
+        d->gridVertices.push_back(transformedTick); d->gridVertices.push_back(ylo);
+        d->gridVertices.push_back(transformedTick); d->gridVertices.push_back(yhi);
     }
     for (float yt : d->yTickValues) {
-        d->gridVertices.push_back(xlo); d->gridVertices.push_back(yt);
-        d->gridVertices.push_back(xhi); d->gridVertices.push_back(yt);
+        const float transformedTick = axisTransform(yt, d->yScale);
+        d->gridVertices.push_back(xlo); d->gridVertices.push_back(transformedTick);
+        d->gridVertices.push_back(xhi); d->gridVertices.push_back(transformedTick);
     }
     d->gridVertexCount = static_cast<int>(d->gridVertices.size()) / 2;
 
@@ -2448,12 +2577,14 @@ void PlotView::computeGridVertices() {
     float txLen = (yhi - ylo) * 0.010f;
     float tyLen = (xhi - xlo) * 0.010f;
     for (float xt : d->xTickValues) {
-        d->axisVertices.push_back(xt); d->axisVertices.push_back(ylo);
-        d->axisVertices.push_back(xt); d->axisVertices.push_back(ylo + txLen);
+        const float transformedTick = axisTransform(xt, d->xScale);
+        d->axisVertices.push_back(transformedTick); d->axisVertices.push_back(ylo);
+        d->axisVertices.push_back(transformedTick); d->axisVertices.push_back(ylo + txLen);
     }
     for (float yt : d->yTickValues) {
-        d->axisVertices.push_back(xlo); d->axisVertices.push_back(yt);
-        d->axisVertices.push_back(xlo + tyLen); d->axisVertices.push_back(yt);
+        const float transformedTick = axisTransform(yt, d->yScale);
+        d->axisVertices.push_back(xlo); d->axisVertices.push_back(transformedTick);
+        d->axisVertices.push_back(xlo + tyLen); d->axisVertices.push_back(transformedTick);
     }
     d->axisVertexCount = static_cast<int>(d->axisVertices.size()) / 2;
     d->gridDirty = false;
@@ -2505,11 +2636,14 @@ static auto plotAreaFor(const QSize& size,
 
 static auto dataToPixel(const BoundingBox2D& bounds,
                         const QRectF& plotArea,
-                        const Eigen::Vector2f& point) -> QPointF
+                        const Eigen::Vector2f& point,
+                        AxisScale xScale,
+                        AxisScale yScale) -> QPointF
 {
-    auto b = bounds.expanded(0.02f);
-    float x = (point.x() - b.min.x()) / b.width();
-    float y = (point.y() - b.min.y()) / b.height();
+    auto b = transformBounds(bounds, xScale, yScale).expanded(0.02f);
+    const auto transformed = transformPoint(point.x(), point.y(), xScale, yScale);
+    float x = (transformed.x() - b.min.x()) / b.width();
+    float y = (transformed.y() - b.min.y()) / b.height();
     return QPointF(plotArea.left() + x * plotArea.width(),
                    plotArea.top() + (1.0f - y) * plotArea.height());
 }
@@ -2584,7 +2718,8 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                 continue;
             float xt = d->xTickValues[i];
             QPointF pos = dataToPixel(d->viewBounds, plotArea,
-                                      Eigen::Vector2f(xt, d->viewBounds.min.y()));
+                                      Eigen::Vector2f(xt, d->viewBounds.min.y()),
+                                      d->xScale, d->yScale);
             QString label = tickLabel(xt);
             QRectF rect(pos.x() - 32.0, xTickY, 64.0, 16.0);
             painter.drawText(rect, Qt::AlignHCenter | Qt::AlignVCenter, label);
@@ -2596,7 +2731,8 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                 continue;
             float yt = d->yTickValues[i];
             QPointF pos = dataToPixel(d->viewBounds, plotArea,
-                                      Eigen::Vector2f(d->viewBounds.min.x(), yt));
+                                      Eigen::Vector2f(d->viewBounds.min.x(), yt),
+                                      d->xScale, d->yScale);
             QString label = tickLabel(yt);
             QRectF rect(yTickX, pos.y() - tickMetrics.height() * 0.5,
                         34.0, tickMetrics.height() + 2.0);
@@ -2701,7 +2837,8 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
             LegendPosition position = d->legendPosition;
             if (position == LegendPosition::Auto) {
                 std::array<std::size_t, 4> occupancy{};
-                const Eigen::Vector2f center = d->viewBounds.center();
+                const Eigen::Vector2f center = transformBounds(
+                    d->viewBounds, d->xScale, d->yScale).center();
                 for (const auto& series : d->series2d) {
                     if (!series.visible)
                         continue;
@@ -2710,10 +2847,14 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                     for (std::size_t i = 0; i + 1 < occupancyVertices.size(); i += 2) {
                         const float x = occupancyVertices[i];
                         const float y = occupancyVertices[i + 1];
-                        if (!std::isfinite(x) || !std::isfinite(y))
+                        if (!validAxisValue(x, d->xScale)
+                            || !validAxisValue(y, d->yScale)) {
                             continue;
-                        const bool right = x >= center.x();
-                        const bool bottom = y < center.y();
+                        }
+                        const auto transformed = transformPoint(
+                            x, y, d->xScale, d->yScale);
+                        const bool right = transformed.x() >= center.x();
+                        const bool bottom = transformed.y() < center.y();
                         const std::size_t quadrant = bottom
                             ? (right ? 3u : 2u)
                             : (right ? 1u : 0u);
@@ -3011,13 +3152,18 @@ void PlotView::mouseMoveEvent(QMouseEvent* event) {
                                           !d->xAxisLabel.isEmpty(),
                                           !d->yAxisLabel.isEmpty(),
                                           d->showColorbar && d->hasColormappedData);
+            auto transformed = transformBounds(d->viewBounds, d->xScale, d->yScale);
             float dx = -static_cast<float>(delta.x())
-                / static_cast<float>(std::max(1.0, plotArea.width())) * d->viewBounds.width();
+                / static_cast<float>(std::max(1.0, plotArea.width())) * transformed.width();
             float dy = static_cast<float>(delta.y())
-                / static_cast<float>(std::max(1.0, plotArea.height())) * d->viewBounds.height();
+                / static_cast<float>(std::max(1.0, plotArea.height())) * transformed.height();
             Eigen::Vector2f shift(dx, dy);
-            d->viewBounds.min += shift;
-            d->viewBounds.max += shift;
+            transformed.min += shift;
+            transformed.max += shift;
+            d->viewBounds.min = inverseTransformPoint(
+                transformed.min.x(), transformed.min.y(), d->xScale, d->yScale);
+            d->viewBounds.max = inverseTransformPoint(
+                transformed.max.x(), transformed.max.y(), d->xScale, d->yScale);
             d->gridDirty = true;
             update();
             return;
@@ -3102,10 +3248,10 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
     d->meshUniformBuffer    = makeUB(r, 112);
     d->meshEdgeUniformBuffer = makeUB(r, 80);
     d->guide3dUniformBuffer = makeUB(r, 80);
-    d->gridUniformBuffer    = makeUB(r, 80);
-    d->axisUniformBuffer    = makeUB(r, 80);
-    d->heatmapUniformBuffer = makeUB(r, 80);
-    d->contourUniformBuffer = makeUB(r, 80);
+    d->gridUniformBuffer    = makeUB(r, 96);
+    d->axisUniformBuffer    = makeUB(r, 96);
+    d->heatmapUniformBuffer = makeUB(r, 96);
+    d->contourUniformBuffer = makeUB(r, 96);
 
     // ── SRBs ───────────────────────────────────────────────────────
     d->point3dSrb = makeUniqueSrb(r, d->point3dUniformBuffer.get());
@@ -3119,7 +3265,7 @@ void PlotView::initialize(QRhiCommandBuffer* /*cb*/) {
 
     // ── Create per-series GPU resources ────────────────────────────
     for (auto& s : d->series2d) {
-        quint32 ubSize = (s.kind == SeriesKind::Scatter) ? 96u : 80u;
+        quint32 ubSize = (s.kind == SeriesKind::Scatter) ? 112u : 96u;
         s.ub = makeRawUB(r, ubSize);
         s.srb = makeSrb(r, s.ub);
         int floats = static_cast<int>(s.vertices.size());
@@ -3377,7 +3523,9 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
     // ── Compute MVP ────────────────────────────────────────────────
     Eigen::Matrix4f mvp;
     QRectF plotArea;
-    BoundingBox2D projBounds = d->viewBounds;
+    BoundingBox2D projBounds = is2D
+        ? transformBounds(d->viewBounds, d->xScale, d->yScale)
+        : d->viewBounds;
     if (is2D) {
         plotArea = plotAreaFor(sz, !d->title.isEmpty(), !d->caption.isEmpty(),
                                !d->xAxisLabel.isEmpty(), !d->yAxisLabel.isEmpty(),
@@ -3420,8 +3568,8 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
 
     Eigen::Vector4f bgColor = d->userBgColor.value_or(d->theme.background);
 
-    // Build line strokes in data coordinates from pixel-based widths and dash
-    // lengths. Rebuild only when source/style or the data-to-pixel scale changes.
+    // Build line strokes in transformed axis coordinates from pixel-based
+    // widths and dash lengths. Rebuild when source, style, scale, or zoom changes.
     if (is2D) {
         const float scaleX = static_cast<float>(plotArea.width()) / projBounds.width();
         const float scaleY = static_cast<float>(plotArea.height()) / projBounds.height();
@@ -3430,7 +3578,9 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                 continue;
             if (!s.strokeDirty && s.strokeScaleX == scaleX && s.strokeScaleY == scaleY)
                 continue;
-            s.vertices = buildStrokeGeometry(s.sourceVertices, s.lineWidth,
+            const auto transformedSource = transformLineSource(
+                s.sourceVertices, d->xScale, d->yScale);
+            s.vertices = buildStrokeGeometry(transformedSource, s.lineWidth,
                                              s.lineStyle, scaleX, scaleY);
             s.vertexCount = static_cast<int>(s.vertices.size() / 2);
             s.strokeScaleX = scaleX;
@@ -3538,15 +3688,25 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
     }
 
     // ── Upload grid uniforms ───────────────────────────────────────
+    const Eigen::Vector4f transformedAxisParams(
+        d->xScale == AxisScale::Log10 ? 1.0f : 0.0f,
+        d->yScale == AxisScale::Log10 ? 1.0f : 0.0f,
+        1.0f, 0.0f);
+    const Eigen::Vector4f dataAxisParams(
+        transformedAxisParams.x(), transformedAxisParams.y(), 0.0f, 0.0f);
     if (is2D && d->showGrid) {
         u->updateDynamicBuffer(d->gridUniformBuffer.get(), 0, 64, mvp.data());
         u->updateDynamicBuffer(d->gridUniformBuffer.get(), 64, 16,
                                d->theme.gridColor.data());
+        u->updateDynamicBuffer(d->gridUniformBuffer.get(), 80, 16,
+                               transformedAxisParams.data());
     }
     if (is2D && d->showAxes) {
         u->updateDynamicBuffer(d->axisUniformBuffer.get(), 0, 64, mvp.data());
         u->updateDynamicBuffer(d->axisUniformBuffer.get(), 64, 16,
                                d->theme.axisColor.data());
+        u->updateDynamicBuffer(d->axisUniformBuffer.get(), 80, 16,
+                               transformedAxisParams.data());
     }
 
     // ── Upload per-series uniforms ─────────────────────────────────
@@ -3560,12 +3720,19 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                 static_cast<float>(s.marker),
                 0.f);
             u->updateDynamicBuffer(s.ub, 80, 16, params.data());
+            u->updateDynamicBuffer(s.ub, 96, 16, dataAxisParams.data());
+        } else {
+            const auto& axisParams = s.kind == SeriesKind::Line
+                ? transformedAxisParams : dataAxisParams;
+            u->updateDynamicBuffer(s.ub, 80, 16, axisParams.data());
         }
     }
 
     // ── Upload heatmap uniform + vertex data ───────────────────────
     if (is2D && d->hasHeatmap && d->heatmapBuffer) {
         u->updateDynamicBuffer(d->heatmapUniformBuffer.get(), 0, 64, mvp.data());
+        u->updateDynamicBuffer(d->heatmapUniformBuffer.get(), 80, 16,
+                               dataAxisParams.data());
         if (d->heatmapDirty && !d->heatmapVertices.empty()) {
             u->updateDynamicBuffer(d->heatmapBuffer.get(), 0,
                                    quint32(d->heatmapVertices.size() * sizeof(float)),
@@ -3579,6 +3746,8 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
         u->updateDynamicBuffer(d->contourUniformBuffer.get(), 0, 64, mvp.data());
         u->updateDynamicBuffer(d->contourUniformBuffer.get(), 64, 16,
                                d->contourColor.data());
+        u->updateDynamicBuffer(d->contourUniformBuffer.get(), 80, 16,
+                       dataAxisParams.data());
         if (d->contourDirty && !d->contourVertices.empty()) {
             u->updateDynamicBuffer(d->contourBuffer.get(), 0,
                                    quint32(d->contourVertices.size() * sizeof(float)),

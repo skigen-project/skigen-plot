@@ -80,6 +80,32 @@ int main(int argc, char* argv[])
     if (view.yLimits() == std::pair{-4.0f, 8.0f})
         return 29;
 
+    if (!view.setXLimits(-2.0f, 10.0f))
+        return 52;
+    view.setXScale(Skigen::Plot::AxisScale::Log10);
+    if (view.xScale() != Skigen::Plot::AxisScale::Log10
+        || view.yScale() != Skigen::Plot::AxisScale::Linear
+        || view.xLimits() == std::pair{-2.0f, 10.0f}
+        || view.setXLimits(0.0f, 10.0f)
+        || view.setXLimits(-1.0f, -10.0f)
+        || !view.setXLimits(100.0f, 0.1f)
+        || view.xLimits() != std::pair{100.0f, 0.1f}) {
+        return 55;
+    }
+    view.setYScale(Skigen::Plot::AxisScale::Log10);
+    if (view.yScale() != Skigen::Plot::AxisScale::Log10
+        || view.setYLimits(-1.0f, 10.0f)
+        || !view.setYLimits(0.01f, 1000.0f)) {
+        return 53;
+    }
+    view.setXScale(Skigen::Plot::AxisScale::Linear);
+    view.setYScale(Skigen::Plot::AxisScale::Linear);
+    view.resetAxisLimits();
+    if (view.xScale() != Skigen::Plot::AxisScale::Linear
+        || view.yScale() != Skigen::Plot::AxisScale::Linear) {
+        return 54;
+    }
+
     view.resize(640, 480);
     QImage withoutLegend(view.size(), QImage::Format_ARGB32_Premultiplied);
     withoutLegend.fill(Qt::transparent);

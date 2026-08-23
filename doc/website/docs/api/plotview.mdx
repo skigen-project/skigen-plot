@@ -66,6 +66,10 @@ public:
     void resetXLimits();
     void resetYLimits();
     void resetAxisLimits();
+    void setXScale(AxisScale scale);
+    void setYScale(AxisScale scale);
+    AxisScale xScale() const;
+    AxisScale yScale() const;
 
     // 3D camera
     void setCamera(const Camera3D& camera);
@@ -86,6 +90,11 @@ stem, box, violin, quiver, and pie creation returns an opaque `SeriesHandle`.
 Handles remain stable when other series are removed. Mutating or removing an
 invalid, stale, or foreign handle returns `false` and leaves the view unchanged.
 Creation with insufficient input returns an invalid handle.
+
+X and y axes independently support `AxisScale::Linear` and
+`AxisScale::Log10`. Public limits remain in data units and may be reversed.
+Logarithmic limits must be positive; non-positive samples are omitted from
+logarithmic bounds and rendering.
 
 Vector inputs truncate mismatched arguments to the shortest required length.
 Handle-returning 2D plots discard samples containing NaN or infinity; filled

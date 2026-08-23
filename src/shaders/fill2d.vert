@@ -8,10 +8,21 @@ layout(location = 0) out vec4 fragColor;
 layout(std140, binding = 0) uniform buf {
     mat4 mvp;
     vec4 color;  // unused for per-vertex fill, kept for SRB layout compatibility
+    vec4 axisParams; // x/y: log10 scale
 };
 
 void main()
 {
     fragColor = vcolor;
-    gl_Position = mvp * vec4(position, 0.0, 1.0);
+    if ((axisParams.x > 0.5 && position.x <= 0.0)
+        || (axisParams.y > 0.5 && position.y <= 0.0)) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        return;
+    }
+    vec2 transformed = position;
+    if (axisParams.x > 0.5)
+        transformed.x = log2(position.x) / log2(10.0);
+    if (axisParams.y > 0.5)
+        transformed.y = log2(position.y) / log2(10.0);
+    gl_Position = mvp * vec4(transformed, 0.0, 1.0);
 }

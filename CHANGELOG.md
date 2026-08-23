@@ -23,6 +23,8 @@ All notable changes to SkigenPlot will be documented in this file.
   placement.
 - Independent x/y axis limits with getters, autoscale reset, validation, and
   intentional axis inversion through reversed endpoints.
+- Independent linear and base-10 logarithmic x/y scales with decade ticks,
+  mixed-scale rendering, transformed pan/zoom, and positive-domain validation.
 - Circle, square, triangle, plus, and cross scatter markers, including hollow
   rendering for closed shapes.
 - Deterministic finite-data filtering for line, scatter, series updates, and

@@ -68,6 +68,9 @@ pie chart, share one handle for styling, visibility, and removal.
 Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,
 `resetYLimits()`, or `resetAxisLimits()` restore automatic limits.
+Use `setXScale(AxisScale::Log10)` and `setYScale(AxisScale::Log10)` independently
+for base-10 logarithmic axes. Limits remain expressed in data units; logarithmic
+limits must be positive, and non-positive samples are omitted on logarithmic axes.
 Scatter series support circle, square, triangle, plus, and cross markers.
 Line series support solid, dashed, dotted, and dash-dot strokes. Line width and
 dash spacing are measured in screen pixels and remain stable while zooming.

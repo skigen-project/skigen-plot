@@ -422,6 +422,15 @@ public:
     void resetYLimits();
     void resetAxisLimits();
 
+    /// @brief Set the independent x-axis scale. Switching to Log10 resets
+    ///   explicit limits that are outside the positive logarithmic domain.
+    void setXScale(AxisScale scale);
+    /// @brief Set the independent y-axis scale. Switching to Log10 resets
+    ///   explicit limits that are outside the positive logarithmic domain.
+    void setYScale(AxisScale scale);
+    auto xScale() const -> AxisScale;
+    auto yScale() const -> AxisScale;
+
     /// @brief Show or hide the legend for visible, labelled 2D series.
     void setLegendVisible(bool visible);
     auto legendVisible() const -> bool;
