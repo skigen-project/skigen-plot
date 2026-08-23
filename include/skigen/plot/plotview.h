@@ -125,64 +125,68 @@ public:
 
     // ── 2D bar / horizontal bar (adds a filled series) ──────────────
 
-    /// @brief Vertical bars of height @p heights at positions @p x.
+    /// @brief Vertical bars of height @p heights at positions @p x. Returns
+    ///   an invalid handle when there are no paired values.
     template <typename DerivedX, typename DerivedH>
-    void bar(const Eigen::MatrixBase<DerivedX>& x,
+    auto bar(const Eigen::MatrixBase<DerivedX>& x,
              const Eigen::MatrixBase<DerivedH>& heights,
              float width = 0.8f,
-             const PlotStyle& style = {})
+             const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf hf = heights.derived().template cast<float>().eval();
-        barImpl({xf.data(), static_cast<std::size_t>(xf.size())},
-                {hf.data(), static_cast<std::size_t>(hf.size())},
-                width, /*horizontal=*/false, style);
+        return barImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                       {hf.data(), static_cast<std::size_t>(hf.size())},
+                       width, /*horizontal=*/false, style);
     }
 
-    /// @brief Horizontal bars of length @p widths at positions @p y.
+    /// @brief Horizontal bars of length @p widths at positions @p y. Returns
+    ///   an invalid handle when there are no paired values.
     template <typename DerivedY, typename DerivedW>
-    void barh(const Eigen::MatrixBase<DerivedY>& y,
+    auto barh(const Eigen::MatrixBase<DerivedY>& y,
               const Eigen::MatrixBase<DerivedW>& widths,
               float thickness = 0.8f,
-              const PlotStyle& style = {})
+              const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf yf = y.derived().template cast<float>().eval();
         Eigen::VectorXf wf = widths.derived().template cast<float>().eval();
-        barImpl({yf.data(), static_cast<std::size_t>(yf.size())},
-                {wf.data(), static_cast<std::size_t>(wf.size())},
-                thickness, /*horizontal=*/true, style);
+        return barImpl({yf.data(), static_cast<std::size_t>(yf.size())},
+                       {wf.data(), static_cast<std::size_t>(wf.size())},
+                       thickness, /*horizontal=*/true, style);
     }
 
     // ── 2D filled area between two curves ───────────────────────────
 
-    /// @brief Fill the region between @p y0 and @p y1 over @p x.
+    /// @brief Fill the region between @p y0 and @p y1 over @p x. Returns an
+    ///   invalid handle when fewer than two triplets are available.
     template <typename DerivedX, typename DerivedY0, typename DerivedY1>
-    void fillBetween(const Eigen::MatrixBase<DerivedX>& x,
+    auto fillBetween(const Eigen::MatrixBase<DerivedX>& x,
                      const Eigen::MatrixBase<DerivedY0>& y0,
                      const Eigen::MatrixBase<DerivedY1>& y1,
-                     const PlotStyle& style = {})
+                     const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf y0f = y0.derived().template cast<float>().eval();
         Eigen::VectorXf y1f = y1.derived().template cast<float>().eval();
-        fillBetweenImpl({xf.data(), static_cast<std::size_t>(xf.size())},
-                        {y0f.data(), static_cast<std::size_t>(y0f.size())},
-                        {y1f.data(), static_cast<std::size_t>(y1f.size())},
-                        style);
+        return fillBetweenImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                       {y0f.data(), static_cast<std::size_t>(y0f.size())},
+                       {y1f.data(), static_cast<std::size_t>(y1f.size())},
+                       style);
     }
 
     // ── 2D step plot (piecewise-constant line) ──────────────────────
 
-    /// @brief Piecewise-constant line through (@p x, @p y).
+    /// @brief Piecewise-constant line through (@p x, @p y). Returns an invalid
+    ///   handle when there are no paired values.
     template <typename DerivedX, typename DerivedY>
-    void step(const Eigen::MatrixBase<DerivedX>& x,
+    auto step(const Eigen::MatrixBase<DerivedX>& x,
               const Eigen::MatrixBase<DerivedY>& y,
-              const PlotStyle& style = {})
+              const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf yf = y.derived().template cast<float>().eval();
-        stepImpl({xf.data(), static_cast<std::size_t>(xf.size())},
-                 {yf.data(), static_cast<std::size_t>(yf.size())}, style);
+        return stepImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                {yf.data(), static_cast<std::size_t>(yf.size())}, style);
     }
 
     // ── 2D error bars ───────────────────────────────────────────────
@@ -433,12 +437,14 @@ private:
 
     auto histImpl(std::span<const float> values, int bins, bool density,
                   const PlotStyle& style) -> SeriesHandle;
-    void barImpl(std::span<const float> positions, std::span<const float> sizes,
-                 float width, bool horizontal, const PlotStyle& style);
-    void fillBetweenImpl(std::span<const float> x, std::span<const float> y0,
-                         std::span<const float> y1, const PlotStyle& style);
-    void stepImpl(std::span<const float> x, std::span<const float> y,
-                  const PlotStyle& style);
+    auto barImpl(std::span<const float> positions, std::span<const float> sizes,
+                 float width, bool horizontal, const PlotStyle& style)
+        -> SeriesHandle;
+    auto fillBetweenImpl(std::span<const float> x, std::span<const float> y0,
+                         std::span<const float> y1, const PlotStyle& style)
+        -> SeriesHandle;
+    auto stepImpl(std::span<const float> x, std::span<const float> y,
+                  const PlotStyle& style) -> SeriesHandle;
     void stemImpl(std::span<const float> x, std::span<const float> y,
                   const PlotStyle& style);
     void errorbarImpl(std::span<const float> x, std::span<const float> y,

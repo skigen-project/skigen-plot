@@ -850,11 +850,12 @@ auto PlotView::histImpl(std::span<const float> values, int bins, bool density,
     return addFillSeries(verts, style);
 }
 
-void PlotView::barImpl(std::span<const float> positions,
+auto PlotView::barImpl(std::span<const float> positions,
                        std::span<const float> sizes,
-                       float width, bool horizontal, const PlotStyle& style) {
+                       float width, bool horizontal,
+                       const PlotStyle& style) -> SeriesHandle {
     const int n = static_cast<int>(std::min(positions.size(), sizes.size()));
-    if (n == 0) return;
+    if (n == 0) return {};
 
     const float half = width * 0.5f;
     std::vector<float> verts;
@@ -867,15 +868,15 @@ void PlotView::barImpl(std::span<const float> positions,
         else
             appendQuad(verts, p - half, 0.0f, p + half, s);
     }
-    addFillSeries(verts, style);
+    return addFillSeries(verts, style);
 }
 
-void PlotView::fillBetweenImpl(std::span<const float> x,
+auto PlotView::fillBetweenImpl(std::span<const float> x,
                                std::span<const float> y0,
                                std::span<const float> y1,
-                               const PlotStyle& style) {
+                               const PlotStyle& style) -> SeriesHandle {
     const int n = static_cast<int>(std::min({x.size(), y0.size(), y1.size()}));
-    if (n < 2) return;
+    if (n < 2) return {};
 
     std::vector<float> verts;
     verts.reserve(static_cast<std::size_t>(n - 1) * 12);
@@ -892,13 +893,13 @@ void PlotView::fillBetweenImpl(std::span<const float> x,
     }
     PlotStyle s = style;
     if (s.opacity >= 1.0f && !s.color) s.opacity = 0.4f; // translucent band by default
-    addFillSeries(verts, s);
+    return addFillSeries(verts, s);
 }
 
-void PlotView::stepImpl(std::span<const float> x, std::span<const float> y,
-                        const PlotStyle& style) {
+auto PlotView::stepImpl(std::span<const float> x, std::span<const float> y,
+                        const PlotStyle& style) -> SeriesHandle {
     const int n = static_cast<int>(std::min(x.size(), y.size()));
-    if (n == 0) return;
+    if (n == 0) return {};
     // Expand to a piecewise-constant polyline: (x0,y0)-(x1,y0)-(x1,y1)-...
     std::vector<float> xs, ys;
     xs.reserve(static_cast<std::size_t>(n) * 2);
@@ -911,8 +912,8 @@ void PlotView::stepImpl(std::span<const float> x, std::span<const float> y,
         xs.push_back(x[static_cast<std::size_t>(i)]);
         ys.push_back(y[static_cast<std::size_t>(i)]);
     }
-    addSeriesImpl(static_cast<int>(SeriesKind::Line),
-                  {xs.data(), xs.size()}, {ys.data(), ys.size()}, style);
+    return addSeriesImpl(static_cast<int>(SeriesKind::Line),
+                         {xs.data(), xs.size()}, {ys.data(), ys.size()}, style);
 }
 
 void PlotView::errorbarImpl(std::span<const float> x, std::span<const float> y,

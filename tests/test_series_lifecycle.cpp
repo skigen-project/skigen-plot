@@ -93,6 +93,28 @@ int main(int argc, char* argv[])
     if (view.hist(empty))
         return 17;
 
+    const auto bars = view.bar(x, y, 0.8f, {.label = "bars"});
+    const auto horizontalBars = view.barh(x, y);
+    if (!bars || !horizontalBars || bars == horizontalBars
+        || !view.containsSeries(bars) || !view.containsSeries(horizontalBars)) {
+        return 18;
+    }
+    if (!view.removeSeries(bars) || !view.containsSeries(horizontalBars))
+        return 19;
+    if (view.bar(empty, y) || view.barh(y, empty))
+        return 20;
+
+    const auto band = view.fillBetween(x, y, x, {.label = "band"});
+    const auto stairs = view.step(x, y, {.label = "step"});
+    if (!band || !stairs || band == stairs
+        || !view.containsSeries(band) || !view.containsSeries(stairs)) {
+        return 21;
+    }
+    if (!view.setSeriesVisible(band, false) || !view.removeSeries(stairs))
+        return 22;
+    if (view.fillBetween(empty, y, x) || view.step(empty, y))
+        return 23;
+
     view.clear();
     return view.containsSeries(points) ? 12 : 0;
 }

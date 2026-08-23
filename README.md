@@ -42,9 +42,10 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-`plot()`, `scatter()`, and `hist()` return stable `SeriesHandle` values. Use
-`updateSeriesData()`, `setSeriesStyle()`, `setSeriesVisible()`, and
-`removeSeries()` to modify one series without clearing the rest of the view.
+`plot()`, `scatter()`, `hist()`, `bar()`, `barh()`, `fillBetween()`, and
+`step()` return stable `SeriesHandle` values. Use `updateSeriesData()`,
+`setSeriesStyle()`, `setSeriesVisible()`, and `removeSeries()` to modify one
+series without clearing the rest of the view.
 Visible labelled series can be shown in a theme-aware legend with automatic
 or explicit corner placement.
 
