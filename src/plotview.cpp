@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <expected>
 #include <numbers>
@@ -71,12 +72,15 @@ static auto loadShader(const QString& path)
 // ── Per-series GPU state ───────────────────────────────────────────
 
 struct Series2D {
+    std::uint64_t id = 0;
     SeriesKind kind;
     std::vector<float> vertices;
     int vertexCount = 0;
     Eigen::Vector4f color;
     float pointSize = 5.0f;
     bool hollow = false;
+    bool visible = true;
+    QString label;
     bool dirty = true;
 
     QRhiBuffer* vb = nullptr;
@@ -91,7 +95,7 @@ struct PlotView::Impl {
     // 2D series
     std::vector<Series2D> series2d;
     int nextColorIndex = 0;
-    std::optional<std::size_t> telemetrySeries;
+    std::optional<SeriesHandle> telemetrySeries;
     std::vector<float> telemetryRing;
     std::size_t telemetryHead = 0;
     std::size_t telemetrySize = 0;
@@ -237,7 +241,7 @@ struct PlotView::Impl {
 
     bool has2D() const {
         return std::ranges::any_of(series2d, [](const Series2D& series) {
-            return series.vertexCount > 0;
+            return series.visible && series.vertexCount > 0;
         }) || hasHeatmap || hasContour;
     }
     bool has3D() const { return mode3d != RenderMode3D::None; }
@@ -259,6 +263,11 @@ static auto makeSrb(QRhi* r, QRhiBuffer* ub)
     });
     srb->create();
     return srb;
+}
+
+static auto nextSeriesId() -> std::uint64_t {
+    static std::atomic<std::uint64_t> nextId{1};
+    return nextId.fetch_add(1, std::memory_order_relaxed);
 }
 
 static auto makeUniqueSrb(QRhi* r, QRhiBuffer* ub)
@@ -538,28 +547,29 @@ PlotView::~PlotView() {
 
 // ── Data setters ───────────────────────────────────────────────────
 
-void PlotView::addLineSeries(std::span<const float> x,
-                              std::span<const float> y,
-                              const PlotStyle& style) {
-    addSeriesImpl(static_cast<int>(SeriesKind::Line), x, y, style);
+auto PlotView::addLineSeries(std::span<const float> x,
+                             std::span<const float> y,
+                             const PlotStyle& style) -> SeriesHandle {
+    return addSeriesImpl(static_cast<int>(SeriesKind::Line), x, y, style);
 }
 
-void PlotView::addScatterSeries(std::span<const float> x,
-                                 std::span<const float> y,
-                                 const PlotStyle& style) {
-    addSeriesImpl(static_cast<int>(SeriesKind::Scatter), x, y, style);
+auto PlotView::addScatterSeries(std::span<const float> x,
+                                std::span<const float> y,
+                                const PlotStyle& style) -> SeriesHandle {
+    return addSeriesImpl(static_cast<int>(SeriesKind::Scatter), x, y, style);
 }
 
-void PlotView::addSeriesImpl(int kindInt,
-                              std::span<const float> x,
-                              std::span<const float> y,
-                              const PlotStyle& style) {
+auto PlotView::addSeriesImpl(int kindInt,
+                             std::span<const float> x,
+                             std::span<const float> y,
+                             const PlotStyle& style) -> SeriesHandle {
     auto kind = static_cast<SeriesKind>(kindInt);
     auto n = static_cast<int>(std::min(x.size(), y.size()));
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
     Series2D series;
+    series.id = nextSeriesId();
     series.kind = kind;
     series.vertices.resize(static_cast<std::size_t>(n) * 2);
     for (int i = 0; i < n; ++i) {
@@ -577,6 +587,7 @@ void PlotView::addSeriesImpl(int kindInt,
     series.color = resolvedColor;
     series.pointSize = style.pointSize;
     series.hollow = style.hollow;
+    series.label = style.label;
     series.dirty = true;
 
     if (d->pipelineReady) {
@@ -590,10 +601,83 @@ void PlotView::addSeriesImpl(int kindInt,
         series.vbCapacity = floats;
     }
 
+    const SeriesHandle handle(series.id);
     d->series2d.push_back(std::move(series));
     recomputeBounds();
     d->gridDirty = true;
     update();
+    return handle;
+}
+
+auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
+                                    std::span<const float> x,
+                                    std::span<const float> y) -> bool {
+    auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
+    if (seriesIt == d->series2d.end() || seriesIt->kind == SeriesKind::Fill)
+        return false;
+
+    const auto count = std::min(x.size(), y.size());
+    seriesIt->vertices.resize(count * 2);
+    for (std::size_t i = 0; i < count; ++i) {
+        seriesIt->vertices[i * 2] = x[i];
+        seriesIt->vertices[i * 2 + 1] = y[i];
+    }
+    seriesIt->vertexCount = static_cast<int>(count);
+    seriesIt->dirty = true;
+    recomputeBounds();
+    d->gridDirty = true;
+    update();
+    return true;
+}
+
+auto PlotView::setSeriesStyle(SeriesHandle handle,
+                              const PlotStyle& style) -> bool {
+    auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
+    if (seriesIt == d->series2d.end())
+        return false;
+
+    Eigen::Vector4f resolvedColor = style.color.value_or(seriesIt->color);
+    if (style.opacity < 1.0f)
+        resolvedColor.w() = style.opacity;
+    seriesIt->color = resolvedColor;
+    seriesIt->pointSize = style.pointSize;
+    seriesIt->hollow = style.hollow;
+    seriesIt->label = style.label;
+    update();
+    return true;
+}
+
+auto PlotView::setSeriesVisible(SeriesHandle handle, bool visible) -> bool {
+    auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
+    if (seriesIt == d->series2d.end())
+        return false;
+
+    seriesIt->visible = visible;
+    recomputeBounds();
+    d->gridDirty = true;
+    update();
+    return true;
+}
+
+auto PlotView::containsSeries(SeriesHandle handle) const -> bool {
+    return std::ranges::any_of(d->series2d, [handle](const Series2D& series) {
+        return series.id == handle.m_id;
+    });
+}
+
+auto PlotView::removeSeries(SeriesHandle handle) -> bool {
+    auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
+    if (seriesIt == d->series2d.end())
+        return false;
+
+    delete seriesIt->vb;
+    delete seriesIt->ub;
+    delete seriesIt->srb;
+    d->series2d.erase(seriesIt);
+    recomputeBounds();
+    d->gridDirty = true;
+    update();
+    return true;
 }
 
 void PlotView::startTelemetry(std::size_t windowSize,
@@ -602,13 +686,15 @@ void PlotView::startTelemetry(std::size_t windowSize,
         throw std::invalid_argument("telemetry window size must be positive");
 
     clearTelemetry();
-    addSeriesImpl(static_cast<int>(SeriesKind::Line), {}, {}, style);
-    d->telemetrySeries = d->series2d.size() - 1;
+    d->telemetrySeries = addSeriesImpl(
+        static_cast<int>(SeriesKind::Line), {}, {}, style);
     d->telemetryRing.resize(windowSize * 2);
     d->telemetryHead = 0;
     d->telemetrySize = 0;
     d->telemetryNextX = 0.0f;
-    d->series2d.back().vertices.reserve(windowSize * 2);
+    auto seriesIt = std::ranges::find(
+        d->series2d, d->telemetrySeries->m_id, &Series2D::id);
+    seriesIt->vertices.reserve(windowSize * 2);
 }
 
 void PlotView::appendTelemetry(float value) {
@@ -631,7 +717,9 @@ void PlotView::appendTelemetry(float x, float y) {
     d->telemetryRing[position * 2] = x;
     d->telemetryRing[position * 2 + 1] = y;
 
-    auto& series = d->series2d[*d->telemetrySeries];
+    auto seriesIt = std::ranges::find(
+        d->series2d, d->telemetrySeries->m_id, &Series2D::id);
+    auto& series = *seriesIt;
     series.vertices.resize(d->telemetrySize * 2);
     for (std::size_t i = 0; i < d->telemetrySize; ++i) {
         const std::size_t source = (d->telemetryHead + i) % capacity;
@@ -655,12 +743,7 @@ void PlotView::clearTelemetry() {
     if (!d->telemetrySeries)
         return;
 
-    auto seriesIt = d->series2d.begin()
-        + static_cast<std::ptrdiff_t>(*d->telemetrySeries);
-    delete seriesIt->vb;
-    delete seriesIt->ub;
-    delete seriesIt->srb;
-    d->series2d.erase(seriesIt);
+    removeSeries(*d->telemetrySeries);
     d->telemetrySeries.reset();
     d->telemetryRing.clear();
     d->telemetryHead = 0;
@@ -1802,7 +1885,7 @@ auto PlotView::is2DView() const -> bool {
 void PlotView::recomputeBounds() {
     d->bounds2d = BoundingBox2D();
     for (const auto& s : d->series2d) {
-        if (s.vertexCount == 0) continue;
+        if (!s.visible || s.vertexCount == 0) continue;
         BoundingBox2D sb;
         for (int i = 0; i < s.vertexCount; ++i) {
             float x = s.vertices[static_cast<std::size_t>(i) * 2];
@@ -3023,7 +3106,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
     // Two passes so filled geometry (bars, histogram, area) renders *under*
     // line/scatter series, matching matplotlib's z-ordering.
     auto drawSeries2D = [&](const Series2D& s) {
-        if (s.vertexCount <= 0) return;
+        if (!s.visible || s.vertexCount <= 0) return;
         if (s.kind == SeriesKind::Line) {
             cb->setGraphicsPipeline(d->linePipeline.get());
         } else if (s.kind == SeriesKind::Fill) {

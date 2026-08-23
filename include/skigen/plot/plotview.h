@@ -36,30 +36,48 @@ public:
     // ── 2D line plot (adds a series) ────────────────────────────────
 
     template <typename DerivedX, typename DerivedY>
-    void plot(const Eigen::MatrixBase<DerivedX>& x,
+    auto plot(const Eigen::MatrixBase<DerivedX>& x,
               const Eigen::MatrixBase<DerivedY>& y,
-              const PlotStyle& style = {})
+              const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf yf = y.derived().template cast<float>().eval();
-        addLineSeries({xf.data(), static_cast<std::size_t>(xf.size())},
-                      {yf.data(), static_cast<std::size_t>(yf.size())},
-                      style);
+        return addLineSeries({xf.data(), static_cast<std::size_t>(xf.size())},
+                             {yf.data(), static_cast<std::size_t>(yf.size())},
+                             style);
     }
 
     // ── 2D scatter plot (adds a series) ─────────────────────────────
 
     template <typename DerivedX, typename DerivedY>
-    void scatter(const Eigen::MatrixBase<DerivedX>& x,
+    auto scatter(const Eigen::MatrixBase<DerivedX>& x,
                  const Eigen::MatrixBase<DerivedY>& y,
-                 const PlotStyle& style = {})
+                 const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf yf = y.derived().template cast<float>().eval();
-        addScatterSeries({xf.data(), static_cast<std::size_t>(xf.size())},
-                         {yf.data(), static_cast<std::size_t>(yf.size())},
-                         style);
+        return addScatterSeries({xf.data(), static_cast<std::size_t>(xf.size())},
+                                {yf.data(), static_cast<std::size_t>(yf.size())},
+                                style);
     }
+
+    template <typename DerivedX, typename DerivedY>
+    auto updateSeriesData(SeriesHandle handle,
+                          const Eigen::MatrixBase<DerivedX>& x,
+                          const Eigen::MatrixBase<DerivedY>& y) -> bool
+    {
+        Eigen::VectorXf xf = x.derived().template cast<float>().eval();
+        Eigen::VectorXf yf = y.derived().template cast<float>().eval();
+        return updateSeriesDataImpl(
+            handle,
+            {xf.data(), static_cast<std::size_t>(xf.size())},
+            {yf.data(), static_cast<std::size_t>(yf.size())});
+    }
+
+    auto setSeriesStyle(SeriesHandle handle, const PlotStyle& style) -> bool;
+    auto setSeriesVisible(SeriesHandle handle, bool visible) -> bool;
+    auto containsSeries(SeriesHandle handle) const -> bool;
+    auto removeSeries(SeriesHandle handle) -> bool;
 
     // -- Scrolling telemetry -----------------------------------------
 
@@ -385,12 +403,15 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
 
 private:
-    void addLineSeries(std::span<const float> x, std::span<const float> y,
-                       const PlotStyle& style);
-    void addScatterSeries(std::span<const float> x, std::span<const float> y,
-                          const PlotStyle& style);
-    void addSeriesImpl(int kind, std::span<const float> x,
-                       std::span<const float> y, const PlotStyle& style);
+    auto addLineSeries(std::span<const float> x, std::span<const float> y,
+                       const PlotStyle& style) -> SeriesHandle;
+    auto addScatterSeries(std::span<const float> x, std::span<const float> y,
+                          const PlotStyle& style) -> SeriesHandle;
+    auto addSeriesImpl(int kind, std::span<const float> x,
+                       std::span<const float> y, const PlotStyle& style)
+        -> SeriesHandle;
+    auto updateSeriesDataImpl(SeriesHandle handle, std::span<const float> x,
+                              std::span<const float> y) -> bool;
     void addFillSeries(std::span<const float> triangleVertices,
                        const PlotStyle& style);
 

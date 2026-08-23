@@ -26,3 +26,14 @@ add_test(NAME skigenplot_test_telemetry COMMAND skigenplot_test_telemetry)
 set_tests_properties(skigenplot_test_telemetry PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# ---------------------------------------------------------------------------
+# Stable series handle and mutation tests (offscreen Qt widget)
+# ---------------------------------------------------------------------------
+add_executable(skigenplot_test_series_lifecycle test_series_lifecycle.cpp)
+target_link_libraries(skigenplot_test_series_lifecycle PRIVATE SkigenPlot::SkigenPlot)
+target_compile_options(skigenplot_test_series_lifecycle PRIVATE ${SKIGENPLOT_WARNING_FLAGS})
+add_test(NAME skigenplot_test_series_lifecycle COMMAND skigenplot_test_series_lifecycle)
+set_tests_properties(skigenplot_test_series_lifecycle PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

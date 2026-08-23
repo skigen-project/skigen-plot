@@ -5,9 +5,27 @@
 #include <Eigen/Core>
 #include <QString>
 
+#include <cstdint>
 #include <optional>
 
 namespace Skigen::Plot {
+
+class PlotView;
+
+class SKIGENPLOT_EXPORT SeriesHandle {
+public:
+    SeriesHandle() = default;
+
+    explicit operator bool() const noexcept { return m_id != 0; }
+    friend bool operator==(SeriesHandle, SeriesHandle) = default;
+
+private:
+    explicit SeriesHandle(std::uint64_t id) : m_id(id) {}
+
+    std::uint64_t m_id = 0;
+
+    friend class PlotView;
+};
 
 struct SKIGENPLOT_EXPORT PlotStyle {
     std::optional<Eigen::Vector4f> color;
