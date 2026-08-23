@@ -197,7 +197,9 @@ jobs:
         run: npm run build
 
       - name: Deploy to skigen-project.github.io/skigen-plot/dev/
+        id: deploy
         if: env.SKIGEN_PROJECT_PAT != ''
+        continue-on-error: true
         run: |
           git config --global user.email "deploy@skigen-project.github.io"
           git config --global user.name "skigen-deploy"
@@ -216,3 +218,7 @@ jobs:
       - name: Report skipped deployment
         if: env.SKIGEN_PROJECT_PAT == ''
         run: echo "::notice::Dev website build passed; deployment skipped because SKIGEN_PROJECT_PAT is not configured."
+
+      - name: Report failed deployment
+        if: steps.deploy.outcome == 'failure'
+        run: echo "::warning::Dev website build passed; deployment failed. Refresh SKIGEN_PROJECT_PAT with write access to skigen-project/skigen-project.github.io."
