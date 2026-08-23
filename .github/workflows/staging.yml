@@ -201,7 +201,7 @@ jobs:
         run: |
           git config --global user.email "deploy@skigen-project.github.io"
           git config --global user.name "skigen-deploy"
-          git clone -b main --single-branch "https://${SKIGEN_PROJECT_PAT}@github.com/skigen-project/skigen-project.github.io.git"
+          git clone -b main --single-branch "https://x-access-token:${SKIGEN_PROJECT_PAT}@github.com/skigen-project/skigen-project.github.io.git"
           cd skigen-project.github.io
 
           rm -rf skigen-plot/dev
