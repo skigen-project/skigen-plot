@@ -14,8 +14,9 @@ All notable changes to SkigenPlot will be documented in this file.
   coordinates.
 - Stable line and scatter handles with in-place data/style updates, visibility
   control, and independent removal.
-- Histogram, bar, horizontal-bar, filled-area, and step creation return stable
-  handles with the same style, visibility, and removal operations.
+- Histogram, bar, horizontal-bar, filled-area, step, error-bar, and quiver
+  creation return stable handles with the same style, visibility, and removal
+  operations.
 - Theme-aware legends for labelled 2D series with automatic or fixed-corner
   placement.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.

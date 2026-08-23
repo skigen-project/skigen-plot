@@ -115,6 +115,16 @@ int main(int argc, char* argv[])
     if (view.fillBetween(empty, y, x) || view.step(empty, y))
         return 23;
 
+    const auto errors = view.errorbar(x, y, x, {.label = "errors"});
+    const auto vectors = view.quiver(x, y, y, x, {.label = "vectors"});
+    if (!errors || !vectors || errors == vectors
+        || !view.setSeriesVisible(errors, false)
+        || !view.removeSeries(vectors)) {
+        return 24;
+    }
+    if (view.errorbar(empty, y, x) || view.quiver(x, empty, y, x))
+        return 25;
+
     view.clear();
     return view.containsSeries(points) ? 12 : 0;
 }

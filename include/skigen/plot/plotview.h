@@ -192,18 +192,19 @@ public:
     // ── 2D error bars ───────────────────────────────────────────────
 
     /// @brief Symmetric vertical error bars of half-height @p yerr at (x, y).
+    ///   Returns an invalid handle when there are no complete triplets.
     template <typename DerivedX, typename DerivedY, typename DerivedE>
-    void errorbar(const Eigen::MatrixBase<DerivedX>& x,
+    auto errorbar(const Eigen::MatrixBase<DerivedX>& x,
                   const Eigen::MatrixBase<DerivedY>& y,
                   const Eigen::MatrixBase<DerivedE>& yerr,
-                  const PlotStyle& style = {})
+                  const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf yf = y.derived().template cast<float>().eval();
         Eigen::VectorXf ef = yerr.derived().template cast<float>().eval();
-        errorbarImpl({xf.data(), static_cast<std::size_t>(xf.size())},
-                     {yf.data(), static_cast<std::size_t>(yf.size())},
-                     {ef.data(), static_cast<std::size_t>(ef.size())}, style);
+        return errorbarImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                    {yf.data(), static_cast<std::size_t>(yf.size())},
+                    {ef.data(), static_cast<std::size_t>(ef.size())}, style);
     }
 
     // ── 2D stem plot (baseline-anchored impulses) ──────────────────
@@ -282,19 +283,20 @@ public:
     // ── 2D quiver (vector field) ────────────────────────────────────
 
     /// @brief Draw arrows at (@p x, @p y) with components (@p u, @p v).
+    ///   Returns an invalid handle when there are no complete vector samples.
     template <typename DX, typename DY, typename DU, typename DV>
-    void quiver(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
+    auto quiver(const Eigen::MatrixBase<DX>& x, const Eigen::MatrixBase<DY>& y,
                 const Eigen::MatrixBase<DU>& u, const Eigen::MatrixBase<DV>& v,
-                const PlotStyle& style = {})
+                const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf yf = y.derived().template cast<float>().eval();
         Eigen::VectorXf uf = u.derived().template cast<float>().eval();
         Eigen::VectorXf vf = v.derived().template cast<float>().eval();
-        quiverImpl({xf.data(), static_cast<std::size_t>(xf.size())},
-                   {yf.data(), static_cast<std::size_t>(yf.size())},
-                   {uf.data(), static_cast<std::size_t>(uf.size())},
-                   {vf.data(), static_cast<std::size_t>(vf.size())}, style);
+        return quiverImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                  {yf.data(), static_cast<std::size_t>(yf.size())},
+                  {uf.data(), static_cast<std::size_t>(uf.size())},
+                  {vf.data(), static_cast<std::size_t>(vf.size())}, style);
     }
 
     // ── 2D hexbin (hexagonally-binned density) ──────────────────────
@@ -447,17 +449,18 @@ private:
                   const PlotStyle& style) -> SeriesHandle;
     void stemImpl(std::span<const float> x, std::span<const float> y,
                   const PlotStyle& style);
-    void errorbarImpl(std::span<const float> x, std::span<const float> y,
-                      std::span<const float> yerr, const PlotStyle& style);
+    auto errorbarImpl(std::span<const float> x, std::span<const float> y,
+                      std::span<const float> yerr, const PlotStyle& style)
+        -> SeriesHandle;
     void imshowImpl(std::span<const float> data, int rows, int cols,
                     Colormap cmap, float vmin, float vmax);
     void contourImpl(std::span<const float> data, int rows, int cols,
                      int levels, const PlotStyle& style);
     void contourfImpl(std::span<const float> data, int rows, int cols,
                       int levels, Colormap cmap);
-    void quiverImpl(std::span<const float> x, std::span<const float> y,
+    auto quiverImpl(std::span<const float> x, std::span<const float> y,
                     std::span<const float> u, std::span<const float> v,
-                    const PlotStyle& style);
+                    const PlotStyle& style) -> SeriesHandle;
     void hexbinImpl(std::span<const float> x, std::span<const float> y,
                     int gridsize, Colormap cmap);
     void pieImpl(std::span<const float> values);

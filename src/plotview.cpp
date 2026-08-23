@@ -916,10 +916,12 @@ auto PlotView::stepImpl(std::span<const float> x, std::span<const float> y,
                          {xs.data(), xs.size()}, {ys.data(), ys.size()}, style);
 }
 
-void PlotView::errorbarImpl(std::span<const float> x, std::span<const float> y,
-                            std::span<const float> yerr, const PlotStyle& style) {
+auto PlotView::errorbarImpl(std::span<const float> x,
+                            std::span<const float> y,
+                            std::span<const float> yerr,
+                            const PlotStyle& style) -> SeriesHandle {
     const int n = static_cast<int>(std::min({x.size(), y.size(), yerr.size()}));
-    if (n == 0) return;
+    if (n == 0) return {};
 
     // Whisker thickness / cap width as a fraction of the data x-range.
     float xlo = x[0], xhi = x[0];
@@ -940,7 +942,7 @@ void PlotView::errorbarImpl(std::span<const float> x, std::span<const float> y,
         appendQuad(verts, xi - capHalf, yi + ei - capThick, xi + capHalf, yi + ei + capThick); // top cap
         appendQuad(verts, xi - capHalf, yi - ei - capThick, xi + capHalf, yi - ei + capThick); // bottom cap
     }
-    addFillSeries(verts, style);
+    return addFillSeries(verts, style);
 }
 
 void PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
@@ -1127,11 +1129,11 @@ void PlotView::violinplot(const std::vector<Eigen::VectorXf>& groups,
     }
 }
 
-void PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
+auto PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
                           std::span<const float> u, std::span<const float> v,
-                          const PlotStyle& style) {
+                          const PlotStyle& style) -> SeriesHandle {
     const int n = static_cast<int>(std::min({x.size(), y.size(), u.size(), v.size()}));
-    if (n == 0) return;
+    if (n == 0) return {};
 
     // Shaft thickness / arrowhead size as a fraction of the mean vector length.
     float meanLen = 0.0f;
@@ -1171,7 +1173,7 @@ void PlotView::quiverImpl(std::span<const float> x, std::span<const float> y,
             baseX - nx * headHalf, baseY - ny * headHalf,
         });
     }
-    addFillSeries(verts, style);
+    return addFillSeries(verts, style);
 }
 
 void PlotView::pieImpl(std::span<const float> values) {
