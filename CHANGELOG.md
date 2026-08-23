@@ -39,6 +39,8 @@ All notable changes to SkigenPlot will be documented in this file.
   plots.
 - Documented and tested automatic/default lower bounds for histogram bins,
   contour levels, and hexbin grid size.
+- Portable triangle-based line strokes with effective per-series width, solid,
+  dashed, dotted, and dash-dot styles, and preserved non-finite gaps.
 - Dark, light, paper, and matplotlib-style themes with configurable palettes.
 - Offscreen PNG export and themed gallery generation.
 

@@ -46,6 +46,19 @@ int main(int argc, char* argv[])
         return 1;
     if (!view.containsSeries(line) || !view.containsSeries(points))
         return 2;
+    constexpr std::array lineStyles{
+        Skigen::Plot::LineStyle::Solid,
+        Skigen::Plot::LineStyle::Dashed,
+        Skigen::Plot::LineStyle::Dotted,
+        Skigen::Plot::LineStyle::DashDot
+    };
+    for (const auto lineStyle : lineStyles) {
+        if (!view.setSeriesStyle(line, {.lineWidth = 3.0f,
+                                        .label = "line",
+                                        .lineStyle = lineStyle})) {
+            return 51;
+        }
+    }
 
     if (!view.setXLimits(10.0f, -2.0f) || !view.setYLimits(-4.0f, 8.0f)
         || view.xLimits() != std::pair{10.0f, -2.0f}

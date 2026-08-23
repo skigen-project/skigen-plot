@@ -39,8 +39,10 @@ auto lineStep(QString filename, Skigen::Plot::Theme theme) -> RenderStep {
             view.setTitle(QStringLiteral("Trigonometric Functions"));
             view.setCaption(QStringLiteral("High-resolution line rendering with crisp scientific axes"));
             view.setAxisLabels(QStringLiteral("x [rad]"), QStringLiteral("amplitude"));
-            view.plot(x, sinY, {.label = "sin(x)"});
-            view.plot(x, cosY, {.label = "cos(x)"});
+            view.plot(x, sinY, {.lineWidth = 2.0f, .label = "sin(x)"});
+            view.plot(x, cosY, {.lineWidth = 2.0f,
+                                .label = "cos(x)",
+                                .lineStyle = Skigen::Plot::LineStyle::Dashed});
         }
     };
 }

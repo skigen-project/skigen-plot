@@ -126,4 +126,9 @@ Scatter styles support `MarkerShape::Circle`, `Square`, `Triangle`, `Plus`,
 and `Cross`. Closed shapes can be filled or hollow, and all marker shapes use
 `PlotStyle::pointSize` for sizing.
 
+Line styles support `LineStyle::Solid`, `Dashed`, `Dotted`, and `DashDot`.
+`PlotStyle::lineWidth` controls a portable triangle-based stroke in screen
+pixels; width and dash spacing remain stable under zoom and resize. Non-finite
+samples split a line into separate runs.
+
 See the [Line Plot](../guide/line-plot) and [Scatter Plot](../guide/scatter-plot) guides for usage examples.

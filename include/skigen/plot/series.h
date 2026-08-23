@@ -35,6 +35,13 @@ enum class MarkerShape {
     Cross
 };
 
+enum class LineStyle {
+    Solid,
+    Dashed,
+    Dotted,
+    DashDot
+};
+
 struct SKIGENPLOT_EXPORT PlotStyle {
     std::optional<Eigen::Vector4f> color;
     float lineWidth = 1.5f;
@@ -43,6 +50,7 @@ struct SKIGENPLOT_EXPORT PlotStyle {
     bool hollow = false;
     QString label;
     MarkerShape marker = MarkerShape::Circle;
+    LineStyle lineStyle = LineStyle::Solid;
 };
 
 } // namespace Skigen::Plot

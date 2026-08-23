@@ -19,6 +19,7 @@
 #include <cmath>
 #include <expected>
 #include <iterator>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <ranges>
@@ -107,8 +108,15 @@ struct Series2D {
     std::uint64_t id = 0;
     SeriesKind kind;
     std::vector<float> vertices;
+    std::vector<float> sourceVertices;
     int vertexCount = 0;
+    int sourceVertexCount = 0;
     Eigen::Vector4f color;
+    float lineWidth = 1.5f;
+    LineStyle lineStyle = LineStyle::Solid;
+    float strokeScaleX = 0.0f;
+    float strokeScaleY = 0.0f;
+    bool strokeDirty = true;
     float pointSize = 5.0f;
     bool hollow = false;
     MarkerShape marker = MarkerShape::Circle;
@@ -277,7 +285,9 @@ struct PlotView::Impl {
 
     bool has2D() const {
         return std::ranges::any_of(series2d, [](const Series2D& series) {
-            return series.visible && series.vertexCount > 0;
+            const int count = series.kind == SeriesKind::Line
+                ? series.sourceVertexCount : series.vertexCount;
+            return series.visible && count > 0;
         }) || hasHeatmap || hasContour;
     }
     bool has3D() const { return mode3d != RenderMode3D::None; }
@@ -616,14 +626,24 @@ auto PlotView::addSeriesImpl(int kindInt,
     Series2D series;
     series.id = groupHandle ? groupHandle.m_id : nextSeriesId();
     series.kind = kind;
-    series.vertices.reserve(count * 2);
+    auto& dataVertices = kind == SeriesKind::Line
+        ? series.sourceVertices : series.vertices;
+    dataVertices.reserve(count * 2);
     for (std::size_t i = 0; i < count; ++i) {
-        if (!std::isfinite(x[i]) || !std::isfinite(y[i]))
+        if (!std::isfinite(x[i]) || !std::isfinite(y[i])) {
+            if (kind == SeriesKind::Line) {
+                dataVertices.push_back(std::numeric_limits<float>::quiet_NaN());
+                dataVertices.push_back(std::numeric_limits<float>::quiet_NaN());
+            }
             continue;
-        series.vertices.push_back(x[i]);
-        series.vertices.push_back(y[i]);
+        }
+        dataVertices.push_back(x[i]);
+        dataVertices.push_back(y[i]);
     }
-    series.vertexCount = static_cast<int>(series.vertices.size() / 2);
+    series.sourceVertexCount = kind == SeriesKind::Line
+        ? static_cast<int>(finiteSampleIndices(count, x, y).size()) : 0;
+    series.vertexCount = kind == SeriesKind::Line
+        ? 0 : static_cast<int>(series.vertices.size() / 2);
 
     int colorIdx = d->nextColorIndex;
     d->nextColorIndex++;
@@ -632,6 +652,9 @@ auto PlotView::addSeriesImpl(int kindInt,
     if (style.opacity < 1.0f)
         resolvedColor.w() = style.opacity;
     series.color = resolvedColor;
+    series.lineWidth = std::isfinite(style.lineWidth)
+        ? std::max(0.0f, style.lineWidth) : 1.5f;
+    series.lineStyle = style.lineStyle;
     series.pointSize = style.pointSize;
     series.hollow = style.hollow;
     series.marker = style.marker;
@@ -706,15 +729,26 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
     if (seriesIt->kind == SeriesKind::Fill)
         return false;
 
-    seriesIt->vertices.clear();
-    seriesIt->vertices.reserve(count * 2);
+    auto& dataVertices = seriesIt->kind == SeriesKind::Line
+        ? seriesIt->sourceVertices : seriesIt->vertices;
+    dataVertices.clear();
+    dataVertices.reserve(count * 2);
     for (std::size_t i = 0; i < count; ++i) {
-        if (!std::isfinite(x[i]) || !std::isfinite(y[i]))
+        if (!std::isfinite(x[i]) || !std::isfinite(y[i])) {
+            if (seriesIt->kind == SeriesKind::Line) {
+                dataVertices.push_back(std::numeric_limits<float>::quiet_NaN());
+                dataVertices.push_back(std::numeric_limits<float>::quiet_NaN());
+            }
             continue;
-        seriesIt->vertices.push_back(x[i]);
-        seriesIt->vertices.push_back(y[i]);
+        }
+        dataVertices.push_back(x[i]);
+        dataVertices.push_back(y[i]);
     }
-    seriesIt->vertexCount = static_cast<int>(seriesIt->vertices.size() / 2);
+    seriesIt->sourceVertexCount = seriesIt->kind == SeriesKind::Line
+        ? static_cast<int>(finiteSampleIndices(count, x, y).size()) : 0;
+    seriesIt->vertexCount = seriesIt->kind == SeriesKind::Line
+        ? 0 : static_cast<int>(seriesIt->vertices.size() / 2);
+    seriesIt->strokeDirty = true;
     seriesIt->dirty = true;
     recomputeBounds();
     d->gridDirty = true;
@@ -735,6 +769,10 @@ auto PlotView::setSeriesStyle(SeriesHandle handle,
         series.pointSize = style.pointSize;
         series.hollow = style.hollow;
         series.marker = style.marker;
+        series.lineWidth = std::isfinite(style.lineWidth)
+            ? std::max(0.0f, style.lineWidth) : 1.5f;
+        series.lineStyle = style.lineStyle;
+        series.strokeDirty = true;
         series.label = found ? QString{} : style.label;
         found = true;
     }
@@ -912,6 +950,106 @@ void appendQuad(std::vector<float>& out,
         x0, y0,  x1, y0,  x1, y1,   // triangle 1
         x0, y0,  x1, y1,  x0, y1,   // triangle 2
     });
+}
+
+void appendStrokeQuad(std::vector<float>& out,
+                      const Eigen::Vector2f& start,
+                      const Eigen::Vector2f& end,
+                      float scaleX, float scaleY, float halfWidth) {
+    const Eigen::Vector2f pixelDelta(
+        (end.x() - start.x()) * scaleX,
+        (end.y() - start.y()) * scaleY);
+    const float length = pixelDelta.norm();
+    if (length <= 1e-6f)
+        return;
+    const Eigen::Vector2f pixelNormal(-pixelDelta.y() / length,
+                                       pixelDelta.x() / length);
+    const Eigen::Vector2f offset(pixelNormal.x() * halfWidth / scaleX,
+                                 pixelNormal.y() * halfWidth / scaleY);
+    const Eigen::Vector2f a = start + offset;
+    const Eigen::Vector2f b = start - offset;
+    const Eigen::Vector2f c = end - offset;
+    const Eigen::Vector2f d = end + offset;
+    out.insert(out.end(), {
+        a.x(), a.y(), b.x(), b.y(), c.x(), c.y(),
+        a.x(), a.y(), c.x(), c.y(), d.x(), d.y()
+    });
+}
+
+auto strokePattern(LineStyle style, float width)
+    -> std::pair<std::array<float, 4>, int> {
+    const float unit = std::max(width, 1.0f);
+    switch (style) {
+        case LineStyle::Dashed:
+            return {std::array{6.0f * unit, 4.0f * unit, 0.0f, 0.0f}, 2};
+        case LineStyle::Dotted:
+            return {std::array{1.0f * unit, 2.5f * unit, 0.0f, 0.0f}, 2};
+        case LineStyle::DashDot:
+            return {std::array{6.0f * unit, 3.0f * unit,
+                               1.0f * unit, 3.0f * unit}, 4};
+        case LineStyle::Solid:
+            return {std::array{0.0f, 0.0f, 0.0f, 0.0f}, 0};
+    }
+    return {std::array{0.0f, 0.0f, 0.0f, 0.0f}, 0};
+}
+
+auto buildStrokeGeometry(std::span<const float> source, float width,
+                         LineStyle style, float scaleX, float scaleY)
+    -> std::vector<float> {
+    std::vector<float> vertices;
+    if (width <= 0.0f || std::abs(scaleX) <= 1e-6f || std::abs(scaleY) <= 1e-6f)
+        return vertices;
+
+    const auto [pattern, patternSize] = strokePattern(style, width);
+    int patternIndex = 0;
+    float patternRemaining = patternSize > 0 ? pattern[0] : 0.0f;
+    std::optional<Eigen::Vector2f> previous;
+    for (std::size_t i = 0; i + 1 < source.size(); i += 2) {
+        const Eigen::Vector2f point(source[i], source[i + 1]);
+        if (!point.allFinite()) {
+            previous.reset();
+            patternIndex = 0;
+            patternRemaining = patternSize > 0 ? pattern[0] : 0.0f;
+            continue;
+        }
+        if (!previous) {
+            previous = point;
+            continue;
+        }
+
+        const Eigen::Vector2f delta = point - *previous;
+        const float pixelLength = Eigen::Vector2f(
+            delta.x() * scaleX, delta.y() * scaleY).norm();
+        if (pixelLength <= 1e-6f) {
+            previous = point;
+            continue;
+        }
+        if (patternSize == 0) {
+            appendStrokeQuad(vertices, *previous, point,
+                             scaleX, scaleY, width * 0.5f);
+            previous = point;
+            continue;
+        }
+
+        float consumed = 0.0f;
+        while (consumed < pixelLength) {
+            const float step = std::min(patternRemaining, pixelLength - consumed);
+            if ((patternIndex % 2) == 0 && step > 1e-6f) {
+                const auto start = *previous + delta * (consumed / pixelLength);
+                const auto end = *previous + delta * ((consumed + step) / pixelLength);
+                appendStrokeQuad(vertices, start, end,
+                                 scaleX, scaleY, width * 0.5f);
+            }
+            consumed += step;
+            patternRemaining -= step;
+            if (patternRemaining <= 1e-6f) {
+                patternIndex = (patternIndex + 1) % patternSize;
+                patternRemaining = pattern[static_cast<std::size_t>(patternIndex)];
+            }
+        }
+        previous = point;
+    }
+    return vertices;
 }
 
 } // namespace
@@ -2144,11 +2282,17 @@ auto PlotView::is2DView() const -> bool {
 void PlotView::recomputeBounds() {
     d->bounds2d = BoundingBox2D();
     for (const auto& s : d->series2d) {
-        if (!s.visible || s.vertexCount == 0) continue;
+        const auto& boundsVertices = s.kind == SeriesKind::Line
+            ? s.sourceVertices : s.vertices;
+        const int boundsVertexCount = s.kind == SeriesKind::Line
+            ? s.sourceVertexCount : s.vertexCount;
+        if (!s.visible || boundsVertexCount == 0) continue;
         BoundingBox2D sb;
-        for (int i = 0; i < s.vertexCount; ++i) {
-            float x = s.vertices[static_cast<std::size_t>(i) * 2];
-            float y = s.vertices[static_cast<std::size_t>(i) * 2 + 1];
+        for (std::size_t i = 0; i + 1 < boundsVertices.size(); i += 2) {
+            float x = boundsVertices[i];
+            float y = boundsVertices[i + 1];
+            if (!std::isfinite(x) || !std::isfinite(y))
+                continue;
             if (x < sb.min.x()) sb.min.x() = x;
             if (x > sb.max.x()) sb.max.x() = x;
             if (y < sb.min.y()) sb.min.y() = y;
@@ -2545,9 +2689,13 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                 for (const auto& series : d->series2d) {
                     if (!series.visible)
                         continue;
-                    for (int i = 0; i < series.vertexCount; ++i) {
-                        const float x = series.vertices[static_cast<std::size_t>(i) * 2];
-                        const float y = series.vertices[static_cast<std::size_t>(i) * 2 + 1];
+                    const auto& occupancyVertices = series.kind == SeriesKind::Line
+                        ? series.sourceVertices : series.vertices;
+                    for (std::size_t i = 0; i + 1 < occupancyVertices.size(); i += 2) {
+                        const float x = occupancyVertices[i];
+                        const float y = occupancyVertices[i + 1];
+                        if (!std::isfinite(x) || !std::isfinite(y))
+                            continue;
                         const bool right = x >= center.x();
                         const bool bottom = y < center.y();
                         const std::size_t quadrant = bottom
@@ -2601,6 +2749,15 @@ void PlotView::paintTextOverlay(QPainter& painter, const QSize& size) const {
                     painter.drawRect(QRectF(sampleLeft, rowCenter - 3.0,
                                             sampleWidth, 6.0));
                 } else {
+                    QPen linePen(colorFromVec(entry.color),
+                                 std::max(1.0f, entry.lineWidth));
+                    switch (entry.lineStyle) {
+                        case LineStyle::Dashed:  linePen.setStyle(Qt::DashLine); break;
+                        case LineStyle::Dotted:  linePen.setStyle(Qt::DotLine); break;
+                        case LineStyle::DashDot: linePen.setStyle(Qt::DashDotLine); break;
+                        case LineStyle::Solid:   linePen.setStyle(Qt::SolidLine); break;
+                    }
+                    painter.setPen(linePen);
                     painter.drawLine(QPointF(sampleLeft, rowCenter),
                                      QPointF(sampleLeft + sampleWidth, rowCenter));
                 }
@@ -3203,15 +3360,17 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
 
     // ── Compute MVP ────────────────────────────────────────────────
     Eigen::Matrix4f mvp;
+    QRectF plotArea;
+    BoundingBox2D projBounds = d->viewBounds;
     if (is2D) {
-        BoundingBox2D projBounds = d->viewBounds;
+        plotArea = plotAreaFor(sz, !d->title.isEmpty(), !d->caption.isEmpty(),
+                               !d->xAxisLabel.isEmpty(), !d->yAxisLabel.isEmpty(),
+                               d->showColorbar && d->hasColormappedData);
         if (d->aspectEqual) {
             // Expand the shorter data axis so 1 data-unit maps to the same
             // pixel length on both axes (keeps circles/pies round).
-            QRectF pa = plotAreaFor(sz, !d->title.isEmpty(), !d->caption.isEmpty(),
-                                    !d->xAxisLabel.isEmpty(), !d->yAxisLabel.isEmpty(),
-                                    d->showColorbar && d->hasColormappedData);
-            double paAspect = std::max(1.0, pa.width()) / std::max(1.0, pa.height());
+            double paAspect = std::max(1.0, plotArea.width())
+                / std::max(1.0, plotArea.height());
             float w = std::abs(projBounds.width());
             float h = std::abs(projBounds.height());
             if (w > 1e-6f && h > 1e-6f) {
@@ -3244,6 +3403,26 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
     mvp = corr * mvp;
 
     Eigen::Vector4f bgColor = d->userBgColor.value_or(d->theme.background);
+
+    // Build line strokes in data coordinates from pixel-based widths and dash
+    // lengths. Rebuild only when source/style or the data-to-pixel scale changes.
+    if (is2D) {
+        const float scaleX = static_cast<float>(plotArea.width()) / projBounds.width();
+        const float scaleY = static_cast<float>(plotArea.height()) / projBounds.height();
+        for (auto& s : d->series2d) {
+            if (s.kind != SeriesKind::Line)
+                continue;
+            if (!s.strokeDirty && s.strokeScaleX == scaleX && s.strokeScaleY == scaleY)
+                continue;
+            s.vertices = buildStrokeGeometry(s.sourceVertices, s.lineWidth,
+                                             s.lineStyle, scaleX, scaleY);
+            s.vertexCount = static_cast<int>(s.vertices.size() / 2);
+            s.strokeScaleX = scaleX;
+            s.strokeScaleY = scaleY;
+            s.strokeDirty = false;
+            s.dirty = true;
+        }
+    }
 
     // ── Upload 2D series vertex data ───────────────────────────────
     for (auto& s : d->series2d) {
@@ -3442,12 +3621,6 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
                   {1.0f, 0}, u);
 
     if (is2D) {
-        QRectF plotArea = plotAreaFor(sz,
-                                      !d->title.isEmpty(),
-                                      !d->caption.isEmpty(),
-                                      !d->xAxisLabel.isEmpty(),
-                                      !d->yAxisLabel.isEmpty(),
-                                      d->showColorbar && d->hasColormappedData);
         cb->setViewport({static_cast<float>(plotArea.x()),
                          static_cast<float>(plotArea.y()),
                          static_cast<float>(plotArea.width()),
@@ -3510,7 +3683,7 @@ void PlotView::renderToTarget(QRhiCommandBuffer* cb,
     auto drawSeries2D = [&](const Series2D& s) {
         if (!s.visible || s.vertexCount <= 0) return;
         if (s.kind == SeriesKind::Line) {
-            cb->setGraphicsPipeline(d->linePipeline.get());
+            cb->setGraphicsPipeline(d->fillPipeline.get());
         } else if (s.kind == SeriesKind::Fill) {
             cb->setGraphicsPipeline(d->fillPipeline.get());
         } else {

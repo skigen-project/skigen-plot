@@ -67,6 +67,9 @@ Use `setXLimits()` and `setYLimits()` for explicit view bounds; endpoint order
 is preserved, so reversed endpoints invert an axis. `resetXLimits()`,
 `resetYLimits()`, or `resetAxisLimits()` restore automatic limits.
 Scatter series support circle, square, triangle, plus, and cross markers.
+Line series support solid, dashed, dotted, and dash-dot strokes. Line width and
+dash spacing are measured in screen pixels and remain stable while zooming.
+Non-finite line samples create visible gaps instead of connecting adjacent runs.
 
 ## Plot Types
 
