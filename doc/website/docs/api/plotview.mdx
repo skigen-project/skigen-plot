@@ -35,6 +35,12 @@ public:
                       bool density = false,
                       const PlotStyle& style = {});
 
+    // 2D stem plot
+    template <typename DerivedX, typename DerivedY>
+    SeriesHandle stem(const Eigen::MatrixBase<DerivedX>& x,
+                      const Eigen::MatrixBase<DerivedY>& y,
+                      const PlotStyle& style = {});
+
     // Series lifecycle
     bool updateSeriesData(SeriesHandle handle, const auto& x, const auto& y);
     bool setSeriesStyle(SeriesHandle handle, const PlotStyle& style);
@@ -76,10 +82,13 @@ public:
 `PlotView` is the central class of SkigenPlot. It accepts Eigen matrix expressions directly — no manual data conversion needed. Data is interleaved into GPU vertex buffers and rendered using Qt's RHI abstraction layer.
 
 Line, scatter, histogram, bar, horizontal-bar, filled-area, step, error-bar,
-and quiver creation returns an opaque `SeriesHandle`. Handles remain stable
+stem, and quiver creation returns an opaque `SeriesHandle`. Handles remain stable
 when other series are removed. Mutating or removing an invalid, stale, or
 foreign handle returns `false` and leaves the view unchanged. Creation with
 insufficient input returns an invalid handle.
+
+A stem plot's vertical geometry and marker tips share one handle. Data, style,
+visibility, and removal operations therefore apply to the complete composite.
 
 Set a non-empty `PlotStyle::label` and call `setLegendVisible(true)` to show a
 theme-aware legend. `LegendPosition::Auto` selects the least occupied plot

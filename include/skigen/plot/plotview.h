@@ -213,14 +213,14 @@ public:
     /// @brief Draw vertical stems from y=0 to each (@p x, @p y) with a marker
     ///   at the top of each stem.
     template <typename DerivedX, typename DerivedY>
-    void stem(const Eigen::MatrixBase<DerivedX>& x,
+    auto stem(const Eigen::MatrixBase<DerivedX>& x,
               const Eigen::MatrixBase<DerivedY>& y,
-              const PlotStyle& style = {})
+              const PlotStyle& style = {}) -> SeriesHandle
     {
         Eigen::VectorXf xf = x.derived().template cast<float>().eval();
         Eigen::VectorXf yf = y.derived().template cast<float>().eval();
-        stemImpl({xf.data(), static_cast<std::size_t>(xf.size())},
-                 {yf.data(), static_cast<std::size_t>(yf.size())}, style);
+        return stemImpl({xf.data(), static_cast<std::size_t>(xf.size())},
+                        {yf.data(), static_cast<std::size_t>(yf.size())}, style);
     }
 
     // ── 2D box plot (one box per group) ─────────────────────────────
@@ -443,7 +443,8 @@ private:
     auto addScatterSeries(std::span<const float> x, std::span<const float> y,
                           const PlotStyle& style) -> SeriesHandle;
     auto addSeriesImpl(int kind, std::span<const float> x,
-                       std::span<const float> y, const PlotStyle& style)
+                       std::span<const float> y, const PlotStyle& style,
+                       SeriesHandle groupHandle = {})
         -> SeriesHandle;
     auto updateSeriesDataImpl(SeriesHandle handle, std::span<const float> x,
                               std::span<const float> y) -> bool;
@@ -460,8 +461,8 @@ private:
         -> SeriesHandle;
     auto stepImpl(std::span<const float> x, std::span<const float> y,
                   const PlotStyle& style) -> SeriesHandle;
-    void stemImpl(std::span<const float> x, std::span<const float> y,
-                  const PlotStyle& style);
+    auto stemImpl(std::span<const float> x, std::span<const float> y,
+                  const PlotStyle& style) -> SeriesHandle;
     auto errorbarImpl(std::span<const float> x, std::span<const float> y,
                       std::span<const float> yerr, const PlotStyle& style)
         -> SeriesHandle;

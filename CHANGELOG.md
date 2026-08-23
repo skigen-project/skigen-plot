@@ -17,6 +17,8 @@ All notable changes to SkigenPlot will be documented in this file.
 - Histogram, bar, horizontal-bar, filled-area, step, error-bar, and quiver
   creation return stable handles with the same style, visibility, and removal
   operations.
+- Composite stem plots return one stable handle for updating, styling, hiding,
+  or removing their stems and markers together.
 - Theme-aware legends for labelled 2D series with automatic or fixed-corner
   placement.
 - Independent x/y axis limits with getters, autoscale reset, validation, and

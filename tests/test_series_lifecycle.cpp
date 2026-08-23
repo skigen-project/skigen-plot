@@ -164,6 +164,18 @@ int main(int argc, char* argv[])
     if (view.errorbar(empty, y, x) || view.quiver(x, empty, y, x))
         return 25;
 
+    const auto stems = view.stem(x, y, {.label = "stems"});
+    if (!stems || !view.containsSeries(stems)
+        || !view.updateSeriesData(stems, x, updatedY)
+        || !view.setSeriesStyle(stems, {.label = "updated stems",
+                                        .marker = Skigen::Plot::MarkerShape::Cross})
+        || !view.setSeriesVisible(stems, false)
+        || !view.removeSeries(stems)
+        || view.containsSeries(stems)
+        || view.stem(empty, y)) {
+        return 32;
+    }
+
     view.clear();
     return view.containsSeries(points) ? 12 : 0;
 }

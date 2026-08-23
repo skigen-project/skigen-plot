@@ -566,14 +566,15 @@ auto PlotView::addScatterSeries(std::span<const float> x,
 auto PlotView::addSeriesImpl(int kindInt,
                              std::span<const float> x,
                              std::span<const float> y,
-                             const PlotStyle& style) -> SeriesHandle {
+                             const PlotStyle& style,
+                             SeriesHandle groupHandle) -> SeriesHandle {
     auto kind = static_cast<SeriesKind>(kindInt);
     auto n = static_cast<int>(std::min(x.size(), y.size()));
     if (!d->has2D() && !d->has3D())
         d->interactionTool = InteractionTool::Pan;
 
     Series2D series;
-    series.id = nextSeriesId();
+    series.id = groupHandle ? groupHandle.m_id : nextSeriesId();
     series.kind = kind;
     series.vertices.resize(static_cast<std::size_t>(n) * 2);
     for (int i = 0; i < n; ++i) {
@@ -618,10 +619,44 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
                                     std::span<const float> x,
                                     std::span<const float> y) -> bool {
     auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
-    if (seriesIt == d->series2d.end() || seriesIt->kind == SeriesKind::Fill)
+    if (seriesIt == d->series2d.end())
         return false;
 
     const auto count = std::min(x.size(), y.size());
+    auto scatterIt = std::ranges::find_if(d->series2d, [handle](const Series2D& series) {
+        return series.id == handle.m_id && series.kind == SeriesKind::Scatter;
+    });
+    if (seriesIt->kind == SeriesKind::Fill && scatterIt != d->series2d.end()) {
+        seriesIt->vertices.clear();
+        seriesIt->vertices.reserve(count * 12);
+        scatterIt->vertices.resize(count * 2);
+        float stemHalf = 1e-6f;
+        if (count > 0) {
+            const auto [xMin, xMax] = std::ranges::minmax_element(x.first(count));
+            stemHalf = std::max(*xMax - *xMin, 1e-6f) * 0.0015f;
+        }
+        for (std::size_t i = 0; i < count; ++i) {
+            const float left = x[i] - stemHalf;
+            const float right = x[i] + stemHalf;
+            seriesIt->vertices.insert(seriesIt->vertices.end(), {
+                left, 0.0f, right, 0.0f, right, y[i],
+                left, 0.0f, right, y[i], left, y[i]
+            });
+            scatterIt->vertices[i * 2] = x[i];
+            scatterIt->vertices[i * 2 + 1] = y[i];
+        }
+        seriesIt->vertexCount = static_cast<int>(count * 6);
+        scatterIt->vertexCount = static_cast<int>(count);
+        seriesIt->dirty = true;
+        scatterIt->dirty = true;
+        recomputeBounds();
+        d->gridDirty = true;
+        update();
+        return true;
+    }
+    if (seriesIt->kind == SeriesKind::Fill)
+        return false;
+
     seriesIt->vertices.resize(count * 2);
     for (std::size_t i = 0; i < count; ++i) {
         seriesIt->vertices[i * 2] = x[i];
@@ -637,29 +672,37 @@ auto PlotView::updateSeriesDataImpl(SeriesHandle handle,
 
 auto PlotView::setSeriesStyle(SeriesHandle handle,
                               const PlotStyle& style) -> bool {
-    auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
-    if (seriesIt == d->series2d.end())
+    bool found = false;
+    for (auto& series : d->series2d) {
+        if (series.id != handle.m_id)
+            continue;
+        Eigen::Vector4f resolvedColor = style.color.value_or(series.color);
+        if (style.opacity < 1.0f)
+            resolvedColor.w() = style.opacity;
+        series.color = resolvedColor;
+        series.pointSize = style.pointSize;
+        series.hollow = style.hollow;
+        series.marker = style.marker;
+        series.label = found ? QString{} : style.label;
+        found = true;
+    }
+    if (!found)
         return false;
-
-    Eigen::Vector4f resolvedColor = style.color.value_or(seriesIt->color);
-    if (style.opacity < 1.0f)
-        resolvedColor.w() = style.opacity;
-    seriesIt->color = resolvedColor;
-    seriesIt->pointSize = style.pointSize;
-    seriesIt->hollow = style.hollow;
-    seriesIt->marker = style.marker;
-    seriesIt->label = style.label;
     if (d->textOverlay) d->textOverlay->update();
     update();
     return true;
 }
 
 auto PlotView::setSeriesVisible(SeriesHandle handle, bool visible) -> bool {
-    auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
-    if (seriesIt == d->series2d.end())
+    bool found = false;
+    for (auto& series : d->series2d) {
+        if (series.id == handle.m_id) {
+            series.visible = visible;
+            found = true;
+        }
+    }
+    if (!found)
         return false;
-
-    seriesIt->visible = visible;
     recomputeBounds();
     d->gridDirty = true;
     if (d->textOverlay) d->textOverlay->update();
@@ -674,14 +717,20 @@ auto PlotView::containsSeries(SeriesHandle handle) const -> bool {
 }
 
 auto PlotView::removeSeries(SeriesHandle handle) -> bool {
-    auto seriesIt = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
-    if (seriesIt == d->series2d.end())
+    bool found = false;
+    for (auto& series : d->series2d) {
+        if (series.id != handle.m_id)
+            continue;
+        delete series.vb;
+        delete series.ub;
+        delete series.srb;
+        found = true;
+    }
+    if (!found)
         return false;
-
-    delete seriesIt->vb;
-    delete seriesIt->ub;
-    delete seriesIt->srb;
-    d->series2d.erase(seriesIt);
+    std::erase_if(d->series2d, [handle](const Series2D& series) {
+        return series.id == handle.m_id;
+    });
     recomputeBounds();
     d->gridDirty = true;
     if (d->textOverlay) d->textOverlay->update();
@@ -949,10 +998,10 @@ auto PlotView::errorbarImpl(std::span<const float> x,
     return addFillSeries(verts, style);
 }
 
-void PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
-                        const PlotStyle& style) {
+auto PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
+                        const PlotStyle& style) -> SeriesHandle {
     const int n = static_cast<int>(std::min(x.size(), y.size()));
-    if (n == 0) return;
+    if (n == 0) return {};
 
     float xlo = x[0], xhi = x[0];
     for (int i = 0; i < n; ++i) { xlo = std::min(xlo, x[static_cast<std::size_t>(i)]);
@@ -970,12 +1019,17 @@ void PlotView::stemImpl(std::span<const float> x, std::span<const float> y,
         mx[static_cast<std::size_t>(i)] = xi;
         my[static_cast<std::size_t>(i)] = yi;
     }
-    addFillSeries(verts, style);
+    const auto handle = addFillSeries(verts, style);
     // Markers at the stem tops (re-use the resolved series colour).
     PlotStyle markerStyle = style;
+    auto fillSeries = std::ranges::find(d->series2d, handle.m_id, &Series2D::id);
+    markerStyle.color = fillSeries->color;
     markerStyle.pointSize = (style.pointSize > 0.0f) ? style.pointSize : 6.0f;
+    markerStyle.label.clear();
     addSeriesImpl(static_cast<int>(SeriesKind::Scatter),
-                  {mx.data(), mx.size()}, {my.data(), my.size()}, markerStyle);
+                  {mx.data(), mx.size()}, {my.data(), my.size()}, markerStyle,
+                  handle);
+    return handle;
 }
 
 void PlotView::boxplot(const std::vector<Eigen::VectorXf>& groups,
